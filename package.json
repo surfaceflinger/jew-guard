@@ -1,8 +1,9 @@
 {
   "name": "jew-guard",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Opencode-only security guard: every tool call risk-scored and every tool result scanned by Jev (TypeSafe System One) over the Console gateway with your existing OpenCode credential. Zero-config: no keys, no key files.",
   "type": "module",
+  "main": "./src/opencode.js",
   "exports": {
     ".": "./src/opencode.js",
     "./guard": "./src/guard.js",
