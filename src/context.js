@@ -5,15 +5,10 @@ import { readSession } from "./session.js";
 
 const MAX_TEXT = 700;
 
-export function buildContext({ sessionId, intent, messages } = {}) {
+export function buildContext({ sessionId, messages } = {}) {
   const s = readSession(sessionId);
-  let prompts = s.prompts.map((p) => p.text);
-  let intents = s.intents.map((i) => i.text);
-  if (messages) {
-    prompts = [...prompts, ...messages.filter((m) => m.role === "user").map((m) => m.text)];
-    intents = [...intents, ...messages.filter((m) => m.role === "assistant").map((m) => m.text)];
-  }
-  if (intent) intents.push(intent);
+  const prompts = (messages ?? []).filter((m) => m.role === "user").map((m) => m.text);
+  const intents = (messages ?? []).filter((m) => m.role === "assistant").map((m) => m.text);
   const ctx = {
     user_recent_messages: dedupe(prompts).slice(-3).map(clip),
     assistant_intent: clip(intents.at(-1) ?? ""),

@@ -1,14 +1,14 @@
 // Per-session memory shared by hook invocations, which are separate processes on most hosts.
-// One small JSON file per session under ~/.config/jew-guard/sessions: recent user prompts, the agent's stated intent,
-// recent decisions, and every flagged piece of untrusted content — so a later tool call can be judged against them.
+// One small JSON file per session under ~/.config/jew-guard/sessions: recent decisions and
+// every flagged piece of untrusted content — so a later tool call can be judged against them.
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { configDir } from "./paths.js";
 
 const DIR = () => process.env.JEV_GUARD_SESSIONS ?? join(configDir(), "sessions");
-const CAPS = { prompts: 6, intents: 3, calls: 12, flags: 10 };
-const EMPTY = () => ({ prompts: [], intents: [], calls: [], flags: [] });
+const CAPS = { calls: 12, flags: 10 };
+const EMPTY = () => ({ calls: [], flags: [] });
 
 export function sessionFile(id) {
   return join(DIR(), createHash("sha1").update(String(id)).digest("hex").slice(0, 16) + ".json");
@@ -26,24 +26,10 @@ export function remember(id, key, item) {
   s[key] = [...s[key], { ...item, at: Date.now() }].slice(-CAPS[key]);
   s.updated = Date.now();
   mkdirSync(DIR(), { recursive: true, mode: 0o700 });
-  writeFileSync(sessionFile(id), JSON.stringify(s), { mode: 0o600 });
+  const file = sessionFile(id), tmp = `${file}.tmp`;  // rename: a hook killed mid-write must not corrupt memory
+  writeFileSync(tmp, JSON.stringify(s), { mode: 0o600 });
+  renameSync(tmp, file);
   prune();
-}
-
-/** Shallow-merge fields (e.g. {swept: true}) into the session record. */
-export function update(id, patch) {
-  if (!id) return;
-  const s = { ...readSession(id), ...patch, updated: Date.now() };
-  mkdirSync(DIR(), { recursive: true, mode: 0o700 });
-  writeFileSync(sessionFile(id), JSON.stringify(s), { mode: 0o600 });
-}
-
-export function markReported(id) {
-  if (!id) return;
-  const s = readSession(id);
-  if (!s.flags.some((f) => !f.reported)) return;
-  s.flags = s.flags.map((f) => ({ ...f, reported: true }));
-  writeFileSync(sessionFile(id), JSON.stringify(s), { mode: 0o600 });
 }
 
 // ponytail: sweep sessions older than 7 days once the directory passes 200 files; no scheduler.

@@ -110,7 +110,7 @@ const NEVER_EXTERNAL = new Set(["edit", "write", "multiedit", "notebookedit", "a
   "askuserquestion", "exitplanmode", "write_file", "replace", "write_todos", "write_to_file", "replace_file_content",
   "jew_workspace", "jew_model", "jew_yolo"]);
 // task/agent sit only in READ_ONLY: the sub-agent's own calls are judged one by one, but what it brings back can carry external text.
-export const MIN_SCAN_CHARS = 200;
+export const MIN_SCAN_CHARS = 16;  // below this there is no room for an instruction worth obeying
 const MAX_STATE_CHARS = 60_000; // Jev's state ceiling is ~32k tokens
 
 export function thresholds(env = process.env) {
@@ -155,12 +155,12 @@ export async function assessAction({ tool, input, cwd, agent, context }, opts = 
 }
 
 /** @returns {Promise<null | {flagged: boolean, kind: string, p: number, confidence?: number, message: string}>} null = skipped */
-export async function scanContent({ text, tool, source, task }, opts = {}) {
+export async function scanContent({ text, tool, source }, opts = {}) {
   const env = opts.env ?? process.env;
   const name = String(tool ?? "").toLowerCase();
   if (NEVER_EXTERNAL.has(name) || list(env.JEV_GUARD_SKIP_SCAN).has(name)) return null;
   if (!text || text.length < MIN_SCAN_CHARS) return null;
-  const a = await ask({ source: source ?? tool, ...(task ? { user_task: task } : {}), content: truncate(text) }, SCAN_QUESTIONS, opts);
+  const a = await ask({ source: source ?? tool, content: truncate(text) }, SCAN_QUESTIONS, opts);
   const kind = a.kind?.choice ?? "unknown";
   const p = a.directed?.p ?? 0;
   const flagged = p >= thresholds(env).injectP && (kind === "injection" || kind === "canary" || kind === "unknown");
@@ -206,14 +206,7 @@ export function excerpt(text, max = 500) {
   return (lines.length ? lines : [String(text ?? "").trim()]).join(" ").replace(/\s+/g, " ").slice(0, max);
 }
 
-/** Every string leaf in a tool result, joined. */
-export function collectText(value, out = []) {
-  if (typeof value === "string") out.push(value);
-  else if (Array.isArray(value)) value.forEach((v) => collectText(v, out));
-  else if (value && typeof value === "object") Object.entries(value).forEach(([k, v]) => k !== "type" && collectText(v, out));
-  return out.join("\n");
-}
-
+/** One-line preview of tool arguments for messages and session memory. */
 export function preview(input, max = 160) {
   // Opencode arg names first; anything else falls back to JSON.
   const s = typeof input === "string" ? input : input?.command ?? input?.filePath ?? input?.path ?? input?.url ?? JSON.stringify(input ?? "");

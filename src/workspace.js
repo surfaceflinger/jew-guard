@@ -8,15 +8,17 @@
 //
 // Nothing here reads auth.json, opencode.db, or any other opencode file.
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { readConfig, updateConfig } from "./config.js";
 import { configDir } from "./paths.js";
 
 // Console org listing. (Deliberately not imported from jev.js: that module
 // imports resolveWorkspace from here, so sharing the constant would be a cycle.)
 const CONSOLE_ORGS_URL = "https://opencode.ai/console/api/orgs";
 
-const DEFAULT_FILE = () => process.env.JEV_GUARD_WORKSPACE_FILE ?? join(configDir(), "workspace.json");
+// Picks made before config.json existed live here; read-only, migrated on the next save.
+const LEGACY = () => process.env.JEV_GUARD_WORKSPACE_FILE ?? join(configDir(), "workspace.json");
 
 export function consoleToken(env = process.env) {
   return env.OPENCODE_CONSOLE_TOKEN || env.OPENCODE_API_KEY || null;
@@ -35,18 +37,19 @@ export async function listWorkspaces({ env = process.env, fetchImpl = fetch } = 
   return (Array.isArray(data) ? data : []).map((w) => ({ id: String(w.id), name: String(w.name ?? w.id) }));
 }
 
-export function readSelection(file = DEFAULT_FILE()) {
+export function readSelection() {
+  const c = readConfig();
+  if (typeof c?.org === "string" && c.org) return { id: c.org, name: String(c.orgName ?? c.org) };
   try {
-    const s = JSON.parse(readFileSync(file, "utf8"));
+    const s = JSON.parse(readFileSync(LEGACY(), "utf8"));
     if (s && typeof s.id === "string" && s.id) return { id: s.id, name: String(s.name ?? s.id) };
   } catch {}
   return null;
 }
 
 /** Persists a non-secret workspace pointer (id + name only, never any key). */
-export function saveSelection(sel, file = DEFAULT_FILE()) {
-  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-  writeFileSync(file, JSON.stringify({ id: sel.id, name: sel.name ?? sel.id, at: Date.now() }) + "\n", { mode: 0o600 });
+export function saveSelection(sel) {
+  updateConfig({ org: sel.id, orgName: sel.name ?? sel.id });
 }
 
 /** Find a workspace by id or name (case-insensitive). Pure; also used by the /jev-workspace fast path. */

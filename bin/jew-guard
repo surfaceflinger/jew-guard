@@ -1,0 +1,368 @@
+#!/usr/bin/env nix-shell
+#! nix-shell -i python3 -p python3
+"""jew-guard static config CLI.
+
+Writes ~/.config/jew-guard/config.json: endpoint, credential reference and
+workspace. Run it when zeroconf auto-detection is not enough — no config file
+means jew-guard keeps working the zero-config way (env, opencode auth.json).
+
+  jew-guard auth                 pick endpoint, credential source, workspace
+  jew-guard auth --endpoint opencode --source auth --provider opencode-go
+  jew-guard model                show the effective model
+  jew-guard model ls             list models usable on the configured endpoint
+  jew-guard model set <id>       save a model pick
+"""
+import argparse
+import getpass
+import json
+import os
+import sqlite3
+import sys
+import urllib.error
+import urllib.request
+
+HOME = os.path.expanduser("~")
+CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config"), "jew-guard")
+CONFIG_FILE = os.environ.get("JEV_GUARD_CONFIG_FILE") or os.path.join(CONFIG_DIR, "config.json")
+# Pre-config.json picks; read-only here, migrated on the next save (plugin reads them too).
+LEGACY_MODEL = os.environ.get("JEV_GUARD_MODEL_FILE") or os.path.join(CONFIG_DIR, "model.json")
+LEGACY_WORKSPACE = os.environ.get("JEV_GUARD_WORKSPACE_FILE") or os.path.join(CONFIG_DIR, "workspace.json")
+OPENCODE_DATA = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"), "opencode")
+CONSOLE_ORGS = "https://opencode.ai/console/api/orgs"
+
+ENDPOINTS = {
+    "opencode": {
+        "url": "https://opencode.ai/inference/v1/systemone",
+        "default": "jev-1.13-free",
+        "models": ["jev-1.13-free", "jev-1.13"],
+    },
+    "openrouter": {
+        "url": "https://openrouter.ai/api/alpha/decisions",
+        "default": "inception/mercury-decide:free",
+        "models": ["inception/mercury-decide:free", "inception/mercury-decide (paid)", "~typesafe/jev-latest (paid)"],
+    },
+}
+
+
+def read_json(path, fallback=None):
+    try:
+        return json.load(open(path))
+    except Exception:
+        return fallback
+
+
+def write_json(path, obj):
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    tmp = path + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(obj, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, path)
+
+
+def config():
+    if not os.path.exists(CONFIG_FILE):
+        return {}
+    try:
+        with open(CONFIG_FILE) as f:
+            return json.load(f) or {}
+    except Exception:
+        sys.exit(f"jew-guard: {CONFIG_FILE} is not valid JSON; fix or delete it")
+
+
+def http(url, token=None, body=None, headers=None, timeout=20):
+    req = urllib.request.Request(url, method="POST" if body is not None else "GET")
+    req.add_header("Content-Type", "application/json")
+    if token:
+        req.add_header("Authorization", "Bearer " + token)
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
+    data = json.dumps(body).encode() if body is not None else None
+    try:
+        with urllib.request.urlopen(req, data=data, timeout=timeout) as res:
+            return res.status, json.loads(res.read() or b"null")
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read() or b"null")
+        except Exception:
+            return e.code, None
+    except Exception:
+        return 0, None
+
+
+def list_orgs(token):
+    status, data = http(CONSOLE_ORGS, token=token)
+    if status == 200 and isinstance(data, list):
+        return [{"id": str(w.get("id")), "name": str(w.get("name") or w.get("id"))} for w in data]
+    return None
+
+
+def validate_org(token, org_id):
+    status, _ = http("https://opencode.ai/console/api/v2/config", token=token, headers={"x-org-id": org_id})
+    return status == 200
+
+
+def db_paths():
+    db = os.environ.get("OPENCODE_DB")
+    candidates = [db if db and os.path.isabs(db) else None, db and os.path.join(OPENCODE_DATA, db),
+                  os.path.join(OPENCODE_DATA, "opencode.db"), os.path.join(OPENCODE_DATA, "opencode-stable.db")]
+    return [p for p in candidates if p and os.path.exists(p)]
+
+
+def read_console_db(path):
+    """(access_token, org_id) from one opencode db, or (None, None)."""
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None, None
+    try:
+        row = con.execute("select active_account_id, active_org_id from account_state limit 1").fetchone()
+        account_id, org_id = (row or (None, None))
+        token = None
+        if account_id:
+            token = (con.execute("select access_token from account where id = ?", (account_id,)).fetchone() or (None,))[0]
+        if not token:
+            token = (con.execute("select access_token from account limit 1").fetchone() or (None,))[0]
+        return token, org_id
+    except sqlite3.Error:
+        return None, None
+    finally:
+        con.close()
+
+
+def db_console():
+    """First candidate db that actually holds a Console login — opencode.db may be the
+    wrong (empty) file during the stable -> canonical migration."""
+    for path in db_paths():
+        token, org = read_console_db(path)
+        if token:
+            return token, org
+    return None, None
+
+
+def auth_providers():
+    return read_json(os.path.join(OPENCODE_DATA, "auth.json"), {}) or {}
+
+
+def env_token():
+    for name in ("OPENCODE_CONSOLE_TOKEN", "OPENCODE_API_KEY"):
+        if os.environ.get(name):
+            return name, os.environ[name]
+    return None, None
+
+
+def interactive():
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def ask(prompt, default=None):
+    suffix = f" [{default}]" if default else ""
+    value = input(f"{prompt}{suffix}: ").strip()
+    return value or default
+
+
+def choose(message, options, default=0):
+    for i, (_, label) in enumerate(options, 1):
+        print(f"  {i}) {label}")
+    while True:
+        raw = (input(f"{message} [{default + 1}]: ").strip() or str(default + 1))
+        if raw.isdigit() and 1 <= int(raw) <= len(options):
+            return options[int(raw) - 1][0]
+
+
+def effective_model(cfg):
+    if os.environ.get("JEV_MODEL"):
+        return os.environ["JEV_MODEL"], "JEV_MODEL"
+    if cfg.get("model"):
+        return cfg["model"], "config"
+    saved = (read_json(LEGACY_MODEL, {}) or {}).get("model")
+    if saved:
+        return saved, "legacy model.json"
+    return None, None
+
+
+def resolve_workspace(token, want, org_hint):
+    """Pick the Console workspace for a user token: --workspace, db/saved hint, else prompt."""
+    orgs = list_orgs(token) if token else None
+    def match(w):
+        w = (w or "").strip().lower()
+        return next((o for o in orgs or [] if o["id"].lower() == w or o["name"].lower() == w), None)
+    if want:
+        hit = match(want)
+        if hit:
+            return hit
+        if want.lower().startswith(("wrk_", "org_")):
+            return {"id": want, "name": want}
+        known = ", ".join(o["name"] for o in orgs) if orgs else "cannot list (no token)"
+        sys.exit(f"jew-guard: unknown workspace \"{want}\" ({known})")
+    for hint in (org_hint, (read_json(LEGACY_WORKSPACE, {}) or {}).get("id")):
+        if not hint:
+            continue
+        hit = match(hint)
+        if hit:
+            return hit
+        if orgs is None and hint.lower().startswith(("wrk_", "org_")):
+            return {"id": hint, "name": hint}  # cannot list with this token; keep the known id
+    if not orgs:
+        sys.exit("jew-guard: need a workspace id (wrk_/org_...) — the token cannot list workspaces")
+    if not interactive():
+        sys.exit("jew-guard: pass --workspace <name> (non-interactive)")
+    return choose("Workspace", [(o["id"], f"{o['name']} ({o['id']})") for o in orgs])
+
+
+def cmd_auth(args):
+    cfg = config()
+    endpoint = args.endpoint or (cfg.get("endpoint") if cfg else None)
+    if not endpoint and interactive():
+        endpoint = choose("Endpoint", [("opencode", "opencode    Console gateway (opencode.ai) — Jev models"),
+                                       ("openrouter", "openrouter  OpenRouter decisions — mercury-decide (free)"),
+                                       ("custom", "custom      any System One / decisions URL")])
+    if not endpoint:
+        sys.exit("jew-guard: pass --endpoint opencode|openrouter|<url> (non-interactive)")
+    if endpoint not in ENDPOINTS:
+        args.url, endpoint = args.url or endpoint, "custom"
+    url = args.url or ENDPOINTS.get(endpoint, {}).get("url")
+    if endpoint == "custom" and not url:
+        if not interactive():
+            sys.exit("jew-guard: custom endpoint needs --url")
+        url = ask("Endpoint URL")
+        if not url:
+            sys.exit("jew-guard: no URL given")
+
+    token = None
+    source = args.source
+    if not source:
+        if not interactive():
+            sys.exit("jew-guard: pass --source env|db|auth|key (non-interactive)")
+        if endpoint == "opencode":
+            has_go = "opencode-go" in auth_providers()
+            options = [("env", "env         OPENCODE_CONSOLE_TOKEN (opencode session injects it)"),
+                       ("db", "db          opencode.db Console account (current /connect login)"),
+                       ("auth", "auth        auth.json provider (opencode-go service key)"),
+                       ("key", "key         enter a key")]
+            source = choose("Credential", options, 2 if has_go else (0 if env_token()[0] else 1))
+        else:
+            options = [("auth", "auth        auth.json provider"),
+                       ("key", "key         enter a key")] + ([("env", "env         OPENROUTER_API_KEY")] if os.environ.get("OPENROUTER_API_KEY") else [])
+            source = choose("Credential", options, 0 if endpoint == "openrouter" and "openrouter" in auth_providers() else len(options) - 1)
+
+    entry = {"endpoint": endpoint, "url": url}
+    if source == "env":
+        name = args.key_env or ("OPENROUTER_API_KEY" if endpoint == "openrouter" else "OPENCODE_CONSOLE_TOKEN")
+        entry["keyEnv"] = name
+        token = os.environ.get(name)
+    elif source == "auth":
+        provider = args.provider or ("openrouter" if endpoint == "openrouter" else None)
+        if not provider:
+            providers = [p for p, v in auth_providers().items() if isinstance(v, dict) and v.get("key")]
+            if not interactive() or not providers:
+                sys.exit("jew-guard: pass --provider <name> (auth.json providers: %s)" % ", ".join(providers))
+            provider = choose("Provider", [(p, p) for p in providers])
+        token = (auth_providers().get(provider) or {}).get("key")
+        if not token:
+            sys.exit(f"jew-guard: auth.json has no provider \"{provider}\" with a key")
+        entry["keyProvider"] = provider
+    elif source == "db":
+        token, db_org = db_console()
+        if not token:
+            sys.exit("jew-guard: no Console account in opencode.db — log in with /connect, or use --source auth|key")
+        entry["keyEnv"] = "OPENCODE_CONSOLE_TOKEN"  # no secret on disk: the plugin reads the env opencode injects from the same login
+        args.workspace = args.workspace or db_org
+    elif source == "key":
+        token = args.key or (getpass.getpass("API key: ") if interactive() else None)
+        if not token:
+            sys.exit("jew-guard: pass --key <value>")
+        entry["key"] = token
+    else:
+        sys.exit(f"jew-guard: unknown --source \"{source}\"")
+
+    if endpoint == "opencode" and not str(token or "").startswith("oc_sk_"):
+        # User tokens are not bound to a workspace: Console needs x-opencode-org-id.
+        db_token, db_org = db_console()
+        if source == "env" and not token and not db_token and not args.workspace:
+            sys.exit(f"jew-guard: {entry['keyEnv']} is not set in this shell — export it, or use --source db|auth|key")
+        org = resolve_workspace(token or db_token, args.workspace, db_org or cfg.get("org"))
+        if token and not validate_org(token, org["id"]):
+            print(f"jew-guard: warning: token rejected for {org['name']} ({org['id']}) — saving anyway", file=sys.stderr)
+        entry["org"], entry["orgName"] = org["id"], org["name"]
+
+    model = args.model or (cfg.get("model") if cfg.get("endpoint") == endpoint else None) or ENDPOINTS.get(endpoint, {}).get("default") \
+        or (effective_model(cfg)[0])
+    if model:
+        entry["model"] = model
+    write_json(CONFIG_FILE, entry)
+    print(f"endpoint  {endpoint} ({url})")
+    print(f"auth      {'env ' + entry['keyEnv'] if entry.get('keyEnv') else 'auth.json provider ' + entry['keyProvider'] if entry.get('keyProvider') else 'key stored in config'}")
+    if entry.get("org"):
+        print(f"workspace {entry['orgName']} ({entry['org']})")
+    print(f"model     {entry.get('model') or '(default)'}")
+    print(f"config    {CONFIG_FILE}")
+
+
+def cmd_model(args):
+    cfg = config()
+    action = args.action or "status"
+    if action == "set":
+        if not args.id:
+            sys.exit("jew-guard: usage: jew-guard model set <id>")
+        cfg["model"] = args.id
+        write_json(CONFIG_FILE, cfg)
+        if not cfg.get("endpoint"):
+            print("jew-guard: saved as a zeroconf pick; run `jew-guard auth` to pin endpoint and key")
+        print(f"model set to {args.id}")
+        return
+    if action == "ls":
+        endpoint = cfg.get("endpoint")
+        current, source = effective_model(cfg)
+        groups = [(endpoint, ENDPOINTS[endpoint]["models"])] if endpoint in ENDPOINTS else list((k, v["models"]) for k, v in ENDPOINTS.items())
+        if not endpoint:
+            print("no config.json (zeroconf mode) — known models per endpoint:")
+        for name, models in groups:
+            print(f"{name} ({ENDPOINTS[name]['url']}):")
+            for m in models:
+                print(f"  {'*' if m.split(' ')[0] == current else ' '} {m}")
+        if endpoint == "opencode":
+            key = cfg.get("key") or os.environ.get(cfg.get("keyEnv") or "") or \
+                (auth_providers().get(cfg.get("keyProvider") or "") or {}).get("key")
+            headers = {"x-opencode-org-id": cfg["org"]} if cfg.get("org") else {}
+            status, data = http("https://opencode.ai/inference/v1/models", token=key, headers=headers) if key else (0, None)
+            live = [m.get("id") for m in (data or {}).get("data", []) if "jev" in str(m.get("id", "")).lower()] if status == 200 else []
+            if live:
+                print("live (console /inference/v1/models):")
+                for m in live:
+                    print(f"  {'*' if m == current else ' '} {m}")
+        if current:
+            print(f"current: {current} (from {source})")
+        return
+    current, source = effective_model(cfg)
+    endpoint = cfg.get("endpoint") or ("zeroconf" if not cfg else "?")
+    print(f"endpoint {endpoint}")
+    print(f"model    {current or '(backend default)'}{f' (from {source})' if source else ''}")
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="jew-guard", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command", required=True)
+    p_auth = sub.add_parser("auth", help="configure endpoint, credential and workspace")
+    p_auth.add_argument("--endpoint", help="opencode | openrouter | custom | <url>")
+    p_auth.add_argument("--url", help="override the endpoint URL")
+    p_auth.add_argument("--source", choices=["env", "db", "auth", "key"], help="where the credential comes from")
+    p_auth.add_argument("--key", help="literal API key (stored in config.json, 0600)")
+    p_auth.add_argument("--key-env", help="env var name for --source env")
+    p_auth.add_argument("--provider", help="auth.json provider for --source auth")
+    p_auth.add_argument("--workspace", help="Console workspace name or id (opencode endpoint)")
+    p_auth.add_argument("--model", help="model id to save (default: endpoint default)")
+    p_auth.set_defaults(func=cmd_auth)
+    p_model = sub.add_parser("model", help="show, list or set the model pick")
+    model_sub = p_model.add_subparsers(dest="action")
+    model_sub.add_parser("ls", help="list models known for the configured endpoint")
+    p_set = model_sub.add_parser("set", help="save a model pick")
+    p_set.add_argument("id")
+    p_model.set_defaults(func=cmd_model, id=None)
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

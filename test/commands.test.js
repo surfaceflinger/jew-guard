@@ -13,10 +13,12 @@ const setup = () => {
   process.env.JEV_GUARD_YOLO_FILE = join(dir, "yolo.json");
   process.env.JEV_GUARD_MODEL_FILE = join(dir, "model.json");
   process.env.JEV_GUARD_WORKSPACE_FILE = join(dir, "workspace.json");
+  process.env.JEV_GUARD_CONFIG_FILE = join(dir, "config.json");
   return () => {
     delete process.env.JEV_GUARD_YOLO_FILE;
     delete process.env.JEV_GUARD_MODEL_FILE;
     delete process.env.JEV_GUARD_WORKSPACE_FILE;
+    delete process.env.JEV_GUARD_CONFIG_FILE;
   };
 };
 

@@ -8,7 +8,7 @@ import { tool } from "@opencode-ai/plugin";
 import { assessAction, scanContent, preview, excerpt, INSTRUCTION_FILE } from "./guard.js";
 import { scanInstructionsCached } from "./skills.js";
 import { buildContext, messagesFrom } from "./context.js";
-import { readSession, remember } from "./session.js";
+import { remember } from "./session.js";
 import { ask } from "./jev.js";
 import { consoleToken, listWorkspaces, matchWorkspace, resolveWorkspace, saveSelection, validateWorkspace } from "./workspace.js";
 import { effectiveModel, deleteModel, readModel, saveModel } from "./model.js";
@@ -31,10 +31,12 @@ async function workspaceStatus(env = process.env, opts = {}) {
   return { hasToken, spaces, selected };
 }
 
-/** One live Jev roundtrip on the given model; resolves p or throws. Shared by tool + command fast path. */
+/** One live roundtrip on the configured backend; resolves p or throws. Probe, never the fallback:
+ *  the point is to test the endpoint/model the human is choosing, not OpenRouter. */
 async function probeModel() {
   const a = await ask({ probe: "jew-guard model test" },
-    { ok: { type: "noul", instructions: "Is this a harmless self-test?", criteria: { true: "Yes.", false: "No." } } });
+    { ok: { type: "noul", instructions: "Is this a harmless self-test?", criteria: { true: "Yes.", false: "No." } } },
+    { fallback: false });
   return a.ok.p ?? 0;
 }
 
@@ -46,6 +48,10 @@ export const JewGuard = async ({ client, directory }) => {
     if (process.env.JEV_GUARD_FAIL_CLOSED) throw new Error(`jew-guard unavailable: ${err.message}`);
     return null;
   };
+  // yolo delegates the decision to Jev, so a Jev call that failed is not an "allow":
+  // prompts stay for the human and calls with no prompt channel are blocked, until
+  // /yolo off or Jev answers again (e.g. after paying). Fail-closed keeps denying.
+  const unjudgedYolo = () => isYolo() && !process.env.JEV_GUARD_FAIL_CLOSED;
 
   // The session's messages, via the SDK; empty when the server can't be reached.
   const context = async (sessionID) => {
@@ -72,7 +78,11 @@ export const JewGuard = async ({ client, directory }) => {
           if (level === "ask") return;  // soft-downgraded deny: leave the prompt standing
           allow = level !== "deny";
           if (r) remember(sessionID, "calls", { tool: String(p.permission ?? "unknown"), preview: preview(patterns.join("; "), 100), level: allow ? "allow" : r.level });
-        } catch {
+        } catch (err) {
+          if (unjudgedYolo()) {
+            toast(`jew-guard could not judge this permission, leaving it to you: ${err.message}`, "error");
+            return;  // no verdict: do not auto-approve
+          }
           allow = !process.env.JEV_GUARD_FAIL_CLOSED;  // fail open; fail-closed denies
         }
         const response = allow ? "once" : "reject";
@@ -163,7 +173,13 @@ export const JewGuard = async ({ client, directory }) => {
     },
 
     "tool.execute.before": async (input, output) => {
-      const r = await assessAction({ tool: input.tool, input: output.args, cwd: directory, agent: "opencode", context: await context(input.sessionID) }).catch(failOpen);
+      let r;
+      try {
+        r = await assessAction({ tool: input.tool, input: output.args, cwd: directory, agent: "opencode", context: await context(input.sessionID) });
+      } catch (err) {
+        if (!unjudgedYolo()) return failOpen(err);
+        throw new Error(`jew-guard could not judge this call (${err.message}); yolo mode never runs unjudged calls. Fix Jev (pay for the model / /jev-workspace) or run /yolo off.`);
+      }
       if (r) remember(input.sessionID, "calls", { tool: input.tool, preview: preview(output.args, 100), level: r.level });
       if (!r || r.level === "allow") return;
       if (r.level === "deny") {
@@ -179,7 +195,14 @@ export const JewGuard = async ({ client, directory }) => {
 
     "permission.ask": async (input, output) => {
       const args = { ...(input.metadata ?? {}), pattern: input.pattern, title: input.title };
-      const r = await assessAction({ tool: input.type, input: args, cwd: directory, agent: "opencode", context: await context(input.sessionID) }).catch(failOpen);
+      let r;
+      try {
+        r = await assessAction({ tool: input.type, input: args, cwd: directory, agent: "opencode", context: await context(input.sessionID) });
+      } catch (err) {
+        if (!unjudgedYolo()) return failOpen(err);
+        toast(`jew-guard could not judge this prompt, leaving it to you: ${err.message}`, "error");
+        return;  // no verdict: the prompt stands until the human answers it
+      }
       const level = resolveLevel(r?.level ?? null, { yolo: isYolo(), soft: isSoft() });
       if (level === null) return;  // skipped and no yolo: leave the prompt standing
       output.status = level;  // allow → no prompt, ask → prompt, deny → refused
@@ -191,7 +214,7 @@ export const JewGuard = async ({ client, directory }) => {
       const instructions = /^skill$/i.test(input.tool ?? "") || (source && INSTRUCTION_FILE.test(source));  // skill passes {name}, no path
       const r = await (instructions
         ? scanInstructionsCached({ text: output.output, source: source ?? input.args?.name ?? input.tool })
-        : scanContent({ text: output.output, tool: input.tool, source: preview(input.args, 120), task: readSession(input.sessionID).prompts.at(-1)?.text })
+        : scanContent({ text: output.output, tool: input.tool, source: preview(input.args, 120) })
       ).catch(() => null);
       if (r?.flagged) remember(input.sessionID, "flags", { kind: r.kind, source, tool: input.tool, p: +r.p.toFixed(2), excerpt: excerpt(output.output), reported: true });
       if (!r?.flagged) return;
