@@ -98,8 +98,20 @@ prompt. State lives next to the yolo flag (`JEV_GUARD_SOFT=1` forces it).
 
 ## Install
 
-Requires `@opencode-ai/plugin` resolvable from your config dir (stock opencode
-setup already has it):
+From npm (recommended) — add to `opencode.json` and restart opencode:
+
+```json
+{ "plugin": ["jew-guard"] }
+```
+
+Or install + register in one step:
+
+```bash
+opencode plugin jew-guard
+```
+
+From a checkout, symlink a shim instead (requires `@opencode-ai/plugin`
+resolvable from your config dir — stock opencode setups already have it):
 
 ```bash
 mkdir -p ~/.config/opencode/plugins

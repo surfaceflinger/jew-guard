@@ -14,8 +14,28 @@
   "engines": {
     "node": ">=20.3"
   },
-  "peerDependencies": {
-    "@opencode-ai/plugin": "*"
+  "dependencies": {
+    "@opencode-ai/plugin": "1.15.5"
   },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "jev",
+    "typesafe",
+    "system-one",
+    "security",
+    "prompt-injection"
+  ],
+  "author": "surfaceflinger",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/surfaceflinger/jew-guard.git"
+  },
+  "homepage": "https://github.com/surfaceflinger/jew-guard#readme",
   "license": "MIT"
 }
