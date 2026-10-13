@@ -29,3 +29,13 @@ test("effective model: env > saved > default", () => {
   } finally { delete process.env.JEV_GUARD_MODEL_FILE; }
   assert.ok(withFile);
 });
+
+test("deleteModel clears a saved pick", async () => {
+  const { deleteModel } = await import("../src/model.js");
+  const f = file();
+  saveModel("jev-1.13", f);
+  assert.equal(readModel(f), "jev-1.13");
+  deleteModel(f);
+  assert.equal(readModel(f), null);
+  deleteModel(f); // idempotent, no throw
+});

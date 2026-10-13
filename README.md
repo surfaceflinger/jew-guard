@@ -44,17 +44,57 @@ existing OpenCode credential at runtime:
   (any System One server), or `JEV_API_KEY` (direct TypeSafe API).
 - Workspace: opencode never tells plugins which Console workspace `/connect`
   chose, so on first use run **`/jev-workspace`** (injected by the plugin, no
-  config edit needed), eyeball the detected workspace names, and pick yours.
+  config edit needed) and pick yours: `/jev-workspace <name>` validates and
+  saves in one step. Bare `/jev-workspace` lists detected names to eyeball
+  against your `/connect` choice.
   Single-workspace accounts skip this. Stored as a non-secret `{id, name}`
   pointer in `~/.config/jew-guard/workspace.json` (`JEV_GUARD_WORKSPACE` env or
   `JEV_GUARD_WORKSPACE_FILE` override it). Until picked, the guard fails open
   with a toast pointing at `/jev-workspace`.
 - Model: default is `jev-1.13-free`. Run **`/jev-model`** to switch (e.g. to
-  paid `jev-1.13` if your workspace has funds): it fires one live test call
-  first and only saves the pick if Jev answers, so a model you can't bill is
-  rejected with the error instead of silently breaking the guard. Precedence:
+  paid `jev-1.13` if your workspace has funds): `/jev-model <id>` fires one
+  live test call first and only saves the pick if Jev answers, so a model you
+  can't bill is rejected with the error instead of silently breaking the guard.
+  Precedence:
   `JEV_MODEL` env > `/jev-model` pick (`~/.config/jew-guard/model.json`,
   `JEV_GUARD_MODEL_FILE` overrides) > default.
+
+Commands never reach the LLM: the `command.execute.before` hook handles
+`/jev-workspace`, `/jev-model` and `/yolo` inline and then throws, which stops
+opencode's follow-up agent turn before it starts — the thrown message is shown
+as the command result. Instant, free, no relay chatter. This also makes guard
+mutations human-only by construction: an agent cannot run slash commands, and
+the `jew_workspace` / `jew_model` / `jew_yolo` tools are strictly read-only
+(status/test), so the agent can never enable yolo, switch models, or move
+billing by itself. If the error-styled output bothers you, that throw is one
+line in `src/opencode.js` (`done`).
+
+## Yolo mode
+
+`/yolo on` hands the final call to Jev: `permission.ask` maps Jev `allow`
+**and** `ask` verdicts to auto-approve, and only `deny` still blocks (plus
+fail-closed and injection flags, which always apply). `/yolo off` restores
+per-call prompts; bare `/yolo` reports state. Handled inline with zero tool
+calls, like the other commands. State is a non-secret flag in
+`~/.config/jew-guard/yolo.json` (`JEV_GUARD_YOLO=1` forces it on without a file).
+
+Robustness note: yolo doesn't trust the `permission.ask` hook alone. It also
+watches `permission.asked` events and answers them directly through the reply
+API (`once` for anything Jev doesn't deny, `reject` on deny) — so even if the
+hook ever fails to fire, a yolo dialog auto-resolves instead of sitting until
+a human answers. Replies already handled come back 404 and are ignored.
+
+## Soft mode
+
+`/soft on` downgrades Jev denies to approval prompts instead of blocks — for
+OS maintenance and other inherently-privileged work where a deny is usually
+wrong but running blind is worse. `ask` still prompts, `allow` still runs.
+Yolo and soft compose: natural `ask` verdicts auto-approve (yolo) while denies
+prompt (soft always wins for denies — a soft-downgraded deny is never
+yolo-collapsed). One wrinkle: `tool.execute.before` has no prompt channel, so
+for tools configured to `allow` a soft deny only toasts a warning and runs;
+where the tool is set to `"ask"`, `permission.ask` still produces the real
+prompt. State lives next to the yolo flag (`JEV_GUARD_SOFT=1` forces it).
 
 ## Install
 
@@ -91,6 +131,9 @@ Same variable names as jev-guard:
 | `JEV_GUARD_FAIL_CLOSED` | unset | if set, unreachable Jev denies |
 | `JEV_GUARD_WORKSPACE` | unset | workspace id or name (skips `/jev-workspace`) |
 | `JEV_GUARD_WORKSPACE_FILE` | `~/.config/jew-guard/workspace.json` | where the pick is stored |
+| `JEV_GUARD_YOLO` | unset | `1` forces yolo mode on |
+| `JEV_GUARD_SOFT` | unset | `1` forces soft mode on |
+| `JEV_GUARD_YOLO_FILE` | `~/.config/jew-guard/yolo.json` | where yolo/soft state lives |
 | `JEV_MODEL` | `jev-1.13-free` | System One model; `/jev-model` pick used when unset |
 | `JEV_GUARD_MODEL_FILE` | `~/.config/jew-guard/model.json` | where the `/jev-model` pick is stored |
 | `JEV_BASE_URL` | unset | any System One server, takes precedence |
@@ -108,8 +151,9 @@ flagged (p=0.99).
 `src/guard.js` (questions + policy) · `src/context.js` + `src/session.js`
 (session memory) · `src/skills.js` (instruction-file sweep + hash cache) ·
 `src/workspace.js` (token + workspace resolution, no file spelunking) ·
-`src/model.js` (persisted model pick) ·
-`src/opencode.js` (the `JewGuard` plugin: hooks + `/jev-workspace` + `/jev-model` + tools).
+`src/model.js` (persisted model pick) · `src/paths.js` (single state dir) ·
+`src/yolo.js` (yolo/soft modes + verdict mapping) ·
+`src/opencode.js` (the `JewGuard` plugin: hooks + `/jev-workspace` + `/jev-model` + `/yolo` + `/soft` + tools).
 `npm test` runs the policy unit tests (no network).
 
 Only the tool call (name, arguments, cwd) or tool result is sent to Jev, over

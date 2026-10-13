@@ -104,9 +104,11 @@ export const ACTION_QUESTIONS = {
 const READ_ONLY = new Set(["read", "glob", "grep", "ls", "list", "find", "webfetch", "websearch", "todowrite", "todoread", "askuserquestion", "exitplanmode",
   "notebookread", "listmcpresourcestool", "readmcpresourcetool", "toolsearch", "skill", "task", "agent", "tabs_context_mcp", "read_page", "get_page_text",
   "read_file", "read_many_files", "list_directory", "search_file_content", "grep_search", "google_web_search", "web_fetch", "write_todos",
-  "view_file", "search_web", "read_url_content", "ask_question", "lsp"]);
+  "view_file", "search_web", "read_url_content", "ask_question", "lsp",
+  "jew_workspace", "jew_model", "jew_yolo"]);  // our own status tools: read-only, no external content
 const NEVER_EXTERNAL = new Set(["edit", "write", "multiedit", "notebookedit", "apply_patch", "patch", "delete", "glob", "grep", "ls", "list", "find", "todowrite", "todoread",
-  "askuserquestion", "exitplanmode", "write_file", "replace", "write_todos", "write_to_file", "replace_file_content"]);
+  "askuserquestion", "exitplanmode", "write_file", "replace", "write_todos", "write_to_file", "replace_file_content",
+  "jew_workspace", "jew_model", "jew_yolo"]);
 // task/agent sit only in READ_ONLY: the sub-agent's own calls are judged one by one, but what it brings back can carry external text.
 export const MIN_SCAN_CHARS = 200;
 const MAX_STATE_CHARS = 60_000; // Jev's state ceiling is ~32k tokens
@@ -213,7 +215,8 @@ export function collectText(value, out = []) {
 }
 
 export function preview(input, max = 160) {
-  const s = typeof input === "string" ? input : input?.CommandLine ?? input?.command ?? input?.TargetFile ?? input?.AbsolutePath ?? input?.filePath ?? input?.path ?? input?.url ?? input?.Url ?? JSON.stringify(input ?? "");
+  // Opencode arg names first; anything else falls back to JSON.
+  const s = typeof input === "string" ? input : input?.command ?? input?.filePath ?? input?.path ?? input?.url ?? JSON.stringify(input ?? "");
   return String(s).replace(/\s+/g, " ").slice(0, max);
 }
 

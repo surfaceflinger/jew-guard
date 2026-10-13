@@ -10,8 +10,11 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { CONSOLE_ORGS_URL } from "./jev.js";
 import { configDir } from "./paths.js";
+
+// Console org listing. (Deliberately not imported from jev.js: that module
+// imports resolveWorkspace from here, so sharing the constant would be a cycle.)
+const CONSOLE_ORGS_URL = "https://opencode.ai/console/api/orgs";
 
 const DEFAULT_FILE = () => process.env.JEV_GUARD_WORKSPACE_FILE ?? join(configDir(), "workspace.json");
 
@@ -46,9 +49,11 @@ export function saveSelection(sel, file = DEFAULT_FILE()) {
   writeFileSync(file, JSON.stringify({ id: sel.id, name: sel.name ?? sel.id, at: Date.now() }) + "\n", { mode: 0o600 });
 }
 
-function matches(ws, want) {
-  const w = String(want).trim().toLowerCase();
-  return ws.id.toLowerCase() === w || ws.name.toLowerCase() === w;
+/** Find a workspace by id or name (case-insensitive). Pure; also used by the /jev-workspace fast path. */
+export function matchWorkspace(spaces, want) {
+  const w = String(want ?? "").trim().toLowerCase();
+  if (!w) return null;
+  return spaces.find((ws) => ws.id.toLowerCase() === w || ws.name.toLowerCase() === w) ?? null;
 }
 
 /**
@@ -58,10 +63,10 @@ function matches(ws, want) {
  */
 export async function resolveWorkspace(env = process.env, opts = {}) {
   if (!consoleToken(env)) return null;
-  const spaces = await listWorkspaces({ env, fetchImpl: opts.fetchImpl ?? fetch });
+  const spaces = opts.spaces ?? await listWorkspaces({ env, fetchImpl: opts.fetchImpl ?? fetch });
   if (!spaces.length) return null;
   const want = env.JEV_GUARD_WORKSPACE;
-  if (want) return spaces.find((w) => matches(w, want)) ?? null;
+  if (want) return matchWorkspace(spaces, want);
   const saved = readSelection();
   if (saved) {
     const hit = spaces.find((w) => w.id === saved.id);
@@ -75,6 +80,8 @@ export async function resolveWorkspace(env = process.env, opts = {}) {
 export async function validateWorkspace(sel, { env = process.env, fetchImpl = fetch } = {}) {
   const token = consoleToken(env);
   if (!token) return false;
+  // NOTE: this Console endpoint takes `x-org-id`; inference endpoints take
+  // `x-opencode-org-id`. Both verified live — do not "unify" them.
   const res = await fetchImpl("https://opencode.ai/console/api/v2/config", {
     headers: { Authorization: `Bearer ${token}`, "x-org-id": sel.id },
     signal: AbortSignal.timeout(15_000),

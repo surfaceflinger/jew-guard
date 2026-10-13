@@ -18,7 +18,6 @@ import { resolveWorkspace } from "./workspace.js";
 import { effectiveModel } from "./model.js";
 
 export const CONSOLE_URL = "https://opencode.ai/inference/v1/systemone";
-export const CONSOLE_ORGS_URL = "https://opencode.ai/console/api/orgs";
 export const TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone";
 const SYSTEMONE_PATH = "/v1/systemone";
 
@@ -29,8 +28,10 @@ export async function backend(env = process.env) {
   if (env.JEV_BASE_URL) return { kind: "custom", key: env.JEV_BASE_API_KEY, url: systemOneUrl(env.JEV_BASE_URL) };
   const consoleKey = env.OPENCODE_CONSOLE_TOKEN || env.OPENCODE_API_KEY;
   if (consoleKey) {
-    const ws = await resolveWorkspace(env).catch(() => null);
+    let ws = null, wsError = null;
+    try { ws = await resolveWorkspace(env); } catch (e) { wsError = e; }
     if (ws) return { kind: "console", key: consoleKey, orgId: ws.id, workspaceName: ws.name };
+    if (wsError) throw wsError;  // real failure (network, bad token) — propagate, don't misreport as unpicked
     return { kind: "console-unresolved", key: consoleKey };
   }
   if (env.JEV_API_KEY) return { kind: "typesafe", key: env.JEV_API_KEY };

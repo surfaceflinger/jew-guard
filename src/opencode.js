@@ -2,28 +2,40 @@
 //
 // tool.execute.before throws to block; permission.ask (only fires for tools you set to "ask"
 // in opencode.json) lets the guard auto-approve the safe calls and keep the prompt for the risky
-// ones; tool.execute.after flags results. The /jev-workspace command (injected via the config
-// hook) picks which Console workspace Jev calls are billed to; /jev-model picks the Jev model.
+// ones; tool.execute.after flags results. Injected commands pick billing workspace (/jev-workspace),
+// Jev model (/jev-model), yolo mode (/yolo), and soft mode (/soft) — all handled inline.
 import { tool } from "@opencode-ai/plugin";
 import { assessAction, scanContent, preview, excerpt, INSTRUCTION_FILE } from "./guard.js";
 import { scanInstructionsCached } from "./skills.js";
 import { buildContext, messagesFrom } from "./context.js";
 import { readSession, remember } from "./session.js";
 import { ask } from "./jev.js";
-import { consoleToken, listWorkspaces, readSelection, resolveWorkspace, saveSelection, validateWorkspace } from "./workspace.js";
-import { effectiveModel, readModel, saveModel } from "./model.js";
+import { consoleToken, listWorkspaces, matchWorkspace, resolveWorkspace, saveSelection, validateWorkspace } from "./workspace.js";
+import { effectiveModel, deleteModel, readModel, saveModel } from "./model.js";
+import { isSoft, isYolo, resolveLevel, setSoft, setYolo } from "./yolo.js";
 
 const WORKSPACE_COMMAND = "jev-workspace";
-const WORKSPACE_TEMPLATE = `jew-guard workspace setup. Call the jew_workspace tool with action "status" to see the detected Console workspaces and the current selection. If no workspace is selected and more than one is detected, show the user the workspace names and ask them to pick the one their OpenCode Go subscription / models are billed to (the same one they chose with /connect). Then call jew_workspace with action "select" and their pick. If they are unsure, run action "test" on the pick to verify Jev answers end-to-end before confirming.`;
+const WORKSPACE_TEMPLATE = `jew-guard workspace setup. The plugin hook handles this command inline and stops the turn, so this prompt never runs — no action needed.`;
 const MODEL_COMMAND = "jev-model";
-const MODEL_TEMPLATE = `jew-guard model setup. Call the jew_model tool with action "status" to see the current Jev model and where it comes from. Known models: jev-1.13-free (free, default) and jev-1.13 (paid, needs workspace funds). To switch, call jew_model with action "set" and the model id — it fires one live test call first and only saves if Jev answers, so a paid model without funds is rejected with the 402 instead of silently breaking the guard.`;
+const MODEL_TEMPLATE = `jew-guard model setup. The plugin hook handles this command inline and stops the turn, so this prompt never runs — no action needed.`;
+const YOLO_COMMAND = "yolo";
+const YOLO_TEMPLATE = `jew-guard yolo toggle. The plugin hook handles this command inline and stops the turn, so this prompt never runs — no action needed.`;
+const SOFT_COMMAND = "soft";
+const SOFT_TEMPLATE = `jew-guard soft toggle. The plugin hook handles this command inline and stops the turn, so this prompt never runs — no action needed.`;
 
 async function workspaceStatus(env = process.env, opts = {}) {
   const hasToken = !!consoleToken(env);
   let spaces = [];
   try { spaces = hasToken ? await listWorkspaces({ env, fetchImpl: opts.fetchImpl }) : []; } catch (e) { return { hasToken, spaces, selected: null, error: e.message }; }
-  const selected = await resolveWorkspace(env, opts).catch(() => null);
+  const selected = await resolveWorkspace(env, { ...opts, spaces }).catch(() => null);
   return { hasToken, spaces, selected };
+}
+
+/** One live Jev roundtrip on the given model; resolves p or throws. Shared by tool + command fast path. */
+async function probeModel() {
+  const a = await ask({ probe: "jew-guard model test" },
+    { ok: { type: "noul", instructions: "Is this a harmless self-test?", criteria: { true: "Yes.", false: "No." } } });
+  return a.ok.p ?? 0;
 }
 
 export const JewGuard = async ({ client, directory }) => {
@@ -42,6 +54,35 @@ export const JewGuard = async ({ client, directory }) => {
   };
 
   return {
+    // Belt and braces for yolo: answer permission dialogs directly through the
+    // reply API, not just the permission.ask hook. If the hook ever doesn't
+    // fire (or its verdict is dropped), the dialog would otherwise sit until a
+    // human answers — exactly what yolo mode promises to eliminate.
+    "event": async ({ event }) => {
+      try {
+        if (!event || event.type !== "permission.asked" || !isYolo()) return;
+        const p = event.properties ?? {};
+        const sessionID = p.sessionID, requestID = p.id ?? p.requestID;
+        if (!sessionID || !requestID) return;
+        const patterns = Array.isArray(p.patterns) ? p.patterns : [];
+        let allow = true;
+        try {
+          const r = await assessAction({ tool: p.permission ?? "unknown", input: { permission: p.permission, patterns }, cwd: directory, agent: "opencode", context: await context(sessionID) });
+          const level = resolveLevel(r?.level ?? null, { yolo: true, soft: isSoft() });
+          if (level === "ask") return;  // soft-downgraded deny: leave the prompt standing
+          allow = level !== "deny";
+          if (r) remember(sessionID, "calls", { tool: String(p.permission ?? "unknown"), preview: preview(patterns.join("; "), 100), level: allow ? "allow" : r.level });
+        } catch {
+          allow = !process.env.JEV_GUARD_FAIL_CLOSED;  // fail open; fail-closed denies
+        }
+        const response = allow ? "once" : "reject";
+        // NOTE: the reply method lives on the top-level client, NOT client.session.
+        const send = (query) => client?.postSessionIdPermissionsPermissionId?.({ path: { id: sessionID, permissionID: requestID }, body: { response }, ...(query ? { query } : {}) })?.catch(() => null);
+        const res = await send();
+        if (!res || res.error) await send({ directory }).catch(() => null);  // already answered → 404, ignore
+      } catch {}
+    },
+
     // Inject /jev-workspace and /jev-model so the human can pick billing target and model. No config edits needed.
     "config": async (input) => {
       input.command ??= {};
@@ -57,22 +98,92 @@ export const JewGuard = async ({ client, directory }) => {
           template: MODEL_TEMPLATE,
         };
       }
+      if (!input.command[YOLO_COMMAND]) {
+        input.command[YOLO_COMMAND] = {
+          description: "Toggle yolo mode: Jev auto-approves everything it doesn't deny",
+          template: YOLO_TEMPLATE,
+        };
+      }
+      if (!input.command[SOFT_COMMAND]) {
+        input.command[SOFT_COMMAND] = {
+          description: "Toggle soft mode: Jev denies become approval prompts instead of blocks",
+          template: SOFT_TEMPLATE,
+        };
+      }
+    },
+
+    "command.execute.before": async (input, output) => {
+      // Handle our own commands inline and STOP the turn: opencode runs its
+      // `prompt()` only if this hook returns, so throwing here means NOTHING
+      // reaches the LLM — no relay turn, no chatter, no cost. The message is
+      // shown to the human as the command result (same mechanism as deny).
+      // Only human slash commands reach this hook, which is also what makes
+      // guard mutations human-only: the agent cannot run slash commands, and
+      // the jew_* tools below are read-only, so the agent can never enable
+      // yolo, switch models, or move billing by itself.
+      const name = String(input.command ?? "").replace(/^\//, "").toLowerCase();
+      if (name !== WORKSPACE_COMMAND && name !== MODEL_COMMAND && name !== YOLO_COMMAND && name !== SOFT_COMMAND) return;
+      const arg = String(input.arguments ?? "").trim();
+      const done = (text) => { throw new Error(`jew-guard: ${text}`); };
+      if (name === YOLO_COMMAND || name === SOFT_COMMAND) {
+        const isSoftCmd = name === SOFT_COMMAND;
+        const state = () => isSoftCmd ? isSoft() : isYolo();
+        const set = (on) => isSoftCmd ? setSoft(on) : setYolo(on);
+        const label = isSoftCmd ? "soft" : "yolo";
+        const want = arg.toLowerCase();
+        if (!arg) { done(`${label} mode is ${state() ? "ON" : "OFF"}. Run /${label} on|off.`); }
+        if (want !== "on" && want !== "off") { done(`usage: /${label} on|off (currently ${state() ? "on" : "off"}).`); }
+        set(want === "on");
+        toast(`${label} mode ${want === "on" ? "enabled" : "disabled"}`);
+        done(`${label} mode ${want === "on" ? "ON" : "OFF"}.` + (isSoftCmd && want === "on" ? " Jev denies now prompt instead of blocking." : ""));
+      }
+      if (name === WORKSPACE_COMMAND) {
+        const s = await workspaceStatus(process.env);
+        if (!s.hasToken) done("no Console credential — run /connect first.");
+        if (s.error) done(`workspace lookup failed: ${s.error}`);
+        if (!arg) done(s.spaces.map((w) => `- ${w.name}${s.selected?.id === w.id ? " [selected]" : ""}`).join("\n") +
+          (s.selected ? "" : "\nRe-run as /jev-workspace <name> to pick."));
+        const hit = matchWorkspace(s.spaces, arg);
+        if (!hit) done(`unknown workspace "${arg}". Known: ${s.spaces.map((w) => w.name).join(", ")}.`);
+        if (!await validateWorkspace(hit)) done(`token rejected for "${hit.name}" — not saved.`);
+        saveSelection(hit);
+        done(`Jev calls will bill to "${hit.name}". Saved.`);
+      }
+      const eff = effectiveModel(process.env);
+      if (!arg) done(`model: ${eff.model} (from ${eff.source}). Re-run as /jev-model <id> to switch; known: jev-1.13-free, jev-1.13.`);
+      const prev = readModel();
+      saveModel(arg);
+      try {
+        const p = await probeModel();
+        done(`switched to ${arg} (Jev answered, p=${p.toFixed(2)}). Saved.`);
+      } catch (e) {
+        if (prev) saveModel(prev); else deleteModel();  // revert, or leave no pick behind
+        done(`Jev did not answer on "${arg}": ${e.message} Previous model kept.`);
+      }
     },
 
     "tool.execute.before": async (input, output) => {
       const r = await assessAction({ tool: input.tool, input: output.args, cwd: directory, agent: "opencode", context: await context(input.sessionID) }).catch(failOpen);
       if (r) remember(input.sessionID, "calls", { tool: input.tool, preview: preview(output.args, 100), level: r.level });
       if (!r || r.level === "allow") return;
-      if (r.level === "deny") throw new Error(r.message);
+      if (r.level === "deny") {
+        // Soft mode can't prompt from here (no prompt channel pre-execution):
+        // warn and let it through — permission.ask will still prompt wherever
+        // the tool is configured to "ask".
+        if (isSoft()) { toast(`${r.message} (soft mode: continuing — approve at the prompt)`); return; }
+        throw new Error(r.message);
+      }
+      if (isYolo()) return;  // Jev didn't deny: run silently, no toast
       toast(`${r.message} (set permission for ${input.tool} to "ask" in opencode.json to get a real prompt)`);
     },
 
     "permission.ask": async (input, output) => {
       const args = { ...(input.metadata ?? {}), pattern: input.pattern, title: input.title };
       const r = await assessAction({ tool: input.type, input: args, cwd: directory, agent: "opencode", context: await context(input.sessionID) }).catch(failOpen);
-      if (!r) return;
-      output.status = r.level;  // allow → no prompt, ask → prompt, deny → refused
-      if (r.level !== "allow") toast(r.message);
+      const level = resolveLevel(r?.level ?? null, { yolo: isYolo(), soft: isSoft() });
+      if (level === null) return;  // skipped and no yolo: leave the prompt standing
+      output.status = level;  // allow → no prompt, ask → prompt, deny → refused
+      if (level !== "allow") toast(r?.message ?? `jew-guard: ${level}`);
     },
 
     "tool.execute.after": async (input, output) => {
@@ -90,72 +201,46 @@ export const JewGuard = async ({ client, directory }) => {
 
     "tool": {
       jew_workspace: tool({
-        description: "List Console workspaces and select which one jew-guard bills Jev calls to. Use with /jev-workspace.",
+        description: "Read-only: list Console workspaces and show which one jew-guard bills Jev calls to. Changing it requires the human command /jev-workspace.",
         args: {
-          action: tool.schema.enum(["status", "list", "select", "test"]).optional().describe("status/list/select/test (default status)"),
-          select: tool.schema.string().optional().describe("Workspace id or name to select (with action select)"),
+          action: tool.schema.enum(["status", "list", "test"]).optional().describe("status/list/test (default status)"),
         },
         async execute(args) {
           const action = args.action ?? "status";
-          if (action === "list" || action === "status") {
-            const s = await workspaceStatus(process.env);
-            if (!s.hasToken) return "No Console credential found. Run /connect in opencode first, then retry.";
-            if (s.error) return `Could not list workspaces: ${s.error}`;
-            const lines = s.spaces.map((w) => `- ${w.name} (${w.id})${s.selected?.id === w.id ? " [selected]" : ""}`);
-            return [`Detected Console workspaces (${s.spaces.length}):`, ...lines,
-              s.selected ? `Current selection: ${s.selected.name}.` : "No workspace selected yet — ask the user to pick one, then select it.",
-            ].join("\n");
-          }
-          if (action === "select") {
-            if (!args.select) return "Pass the workspace id or name as select.";
-            const spaces = await listWorkspaces().catch((e) => { throw new Error(`could not list workspaces: ${e.message}`); });
-            const hit = spaces.find((w) => w.id.toLowerCase() === String(args.select).toLowerCase() || w.name.toLowerCase() === String(args.select).toLowerCase());
-            if (!hit) return `Unknown workspace "${args.select}". Known: ${spaces.map((w) => w.name).join(", ")}.`;
-            if (!await validateWorkspace(hit)) return `Token rejected for "${hit.name}" — not saved.`;
-            saveSelection(hit);
-            return `jew-guard will bill Jev calls to "${hit.name}". Saved.`;
-          }
           if (action === "test") {
-            const a = await ask({ probe: "jew-guard workspace test" },
-              { ok: { type: "noul", instructions: "Is this a harmless self-test?", criteria: { true: "Yes.", false: "No." } } });
-            return `Jev answered end-to-end (p=${(a.ok.p ?? 0).toFixed(2)}). Billing workspace resolves correctly.`;
+            const p = await probeModel();
+            return `Jev answered end-to-end (p=${p.toFixed(2)}). Billing workspace resolves correctly.`;
           }
-          return `Unknown action "${action}".`;
+          const s = await workspaceStatus(process.env);
+          if (!s.hasToken) return "No Console credential found. Run /connect in opencode first, then retry.";
+          if (s.error) return `Could not list workspaces: ${s.error}`;
+          const lines = s.spaces.map((w) => `- ${w.name} (${w.id})${s.selected?.id === w.id ? " [selected]" : ""}`);
+          return [`Detected Console workspaces (${s.spaces.length}):`, ...lines,
+            s.selected ? `Current selection: ${s.selected.name}.` : "No workspace selected yet — the human picks one with /jev-workspace.",
+          ].join("\n");
         },
       }),
       jew_model: tool({
-        description: "Show or change the Jev model jew-guard queries. Use with /jev-model.",
+        description: "Read-only: show the Jev model jew-guard queries, or test it. Changing it requires the human command /jev-model.",
         args: {
-          action: tool.schema.enum(["status", "set", "test"]).optional().describe("status/set/test (default status)"),
-          model: tool.schema.string().optional().describe("Model id to switch to (with action set)"),
+          action: tool.schema.enum(["status", "test"]).optional().describe("status/test (default status)"),
         },
         async execute(args) {
           const action = args.action ?? "status";
           const eff = effectiveModel(process.env);
-          if (action === "status") {
-            return `Current Jev model: ${eff.model} (from ${eff.source}).` +
-              (process.env.JEV_MODEL ? " JEV_MODEL is set and wins over any saved pick." : "");
-          }
           if (action === "test") {
-            const a = await ask({ probe: "jew-guard model test" },
-              { ok: { type: "noul", instructions: "Is this a harmless self-test?", criteria: { true: "Yes.", false: "No." } } });
-            return `Jev (${eff.model}) answered end-to-end (p=${(a.ok.p ?? 0).toFixed(2)}).`;
+            const p = await probeModel();
+            return `Jev (${eff.model}) answered end-to-end (p=${p.toFixed(2)}).`;
           }
-          if (action === "set") {
-            const want = String(args.model ?? "").trim();
-            if (!want) return "Pass the model id as model, e.g. jev-1.13.";
-            const prev = readModel();
-            saveModel(want);  // tentatively, so the test call below uses it
-            try {
-              const a = await ask({ probe: "jew-guard model test" },
-                { ok: { type: "noul", instructions: "Is this a harmless self-test?", criteria: { true: "Yes.", false: "No." } } });
-              return `Switched to ${want} (Jev answered, p=${(a.ok.p ?? 0).toFixed(2)}). Saved.`;
-            } catch (e) {
-              if (prev) saveModel(prev);  // revert: the pick does not work
-              throw new Error(`Jev did not answer on "${want}": ${e.message}. Previous model kept.`);
-            }
-          }
-          return `Unknown action "${action}".`;
+          return `Current Jev model: ${eff.model} (from ${eff.source}).` +
+            (process.env.JEV_MODEL ? " JEV_MODEL is set and wins over any saved pick." : "");
+        },
+      }),
+      jew_yolo: tool({
+        description: "Read-only: report yolo/soft mode state. Changing either requires the human commands /yolo and /soft.",
+        args: {},
+        async execute() {
+          return `yolo mode is ${isYolo() ? "ON" : "OFF"}; soft mode is ${isSoft() ? "ON" : "OFF"}.`;
         },
       }),
     },
