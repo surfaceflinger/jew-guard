@@ -1,8 +1,9 @@
 // jew-guard: opencode-only security guard powered by Jev (TypeSafe System One).
 //
-// tool.execute.before throws to block; permission.ask (only fires for tools you set to "ask"
-// in opencode.json) lets the guard auto-approve the safe calls and keep the prompt for the risky
-// ones; tool.execute.after flags results. Injected commands pick billing workspace (/jev-workspace),
+// tool.execute.before throws to block; permission.ask lets the guard auto-approve the safe calls
+// and keep the prompt for the risky ones (the config hook defaults bash/edit/webfetch to "ask"
+// so the prompt channel exists; explicit user rules always win); tool.execute.after flags results.
+// Injected commands pick billing workspace (/jev-workspace),
 // Jev model (/jev-model), yolo mode (/yolo), and soft mode (/soft) — all handled inline.
 import { tool } from "@opencode-ai/plugin";
 import { assessAction, scanContent, preview, excerpt, INSTRUCTION_FILE } from "./guard.js";
@@ -23,6 +24,12 @@ const YOLO_TEMPLATE = `jew-guard yolo toggle. The plugin hook handles this comma
 const SOFT_COMMAND = "soft";
 const SOFT_TEMPLATE = `jew-guard soft toggle. The plugin hook handles this command inline and stops the turn, so this prompt never runs — no action needed.`;
 
+// permission.ask only fires for tools set to "ask", so without these defaults an ask
+// verdict is a toast and the call runs. Fill gaps only: explicit user rules (strings,
+// granular objects, or a global "allow"/"deny") are never overridden. Names are explicit:
+// opencode's permission mapping is its own, so write is listed next to edit, not assumed covered.
+const ASK_BY_DEFAULT = ["bash", "edit", "write", "webfetch"];
+
 async function workspaceStatus(env = process.env, opts = {}) {
   const hasToken = !!consoleToken(env);
   let spaces = [];
@@ -40,7 +47,11 @@ async function probeModel() {
   return a.ok.p ?? 0;
 }
 
-export const JewGuard = async ({ client, directory }) => {
+export const JewGuard = async ({ client, directory }, deps = {}) => {
+  // Seams for tests: production uses the real judge/scan; tests inject stubs.
+  const judge = deps.assessAction ?? assessAction;
+  const scanCached = deps.scanInstructionsCached ?? scanInstructionsCached;
+  const scanOut = deps.scanContent ?? scanContent;
   const toast = (message, variant = "warning") =>
     client?.tui?.showToast?.({ body: { title: "jew-guard", message, variant, duration: 8000 } }).catch(() => {});
   const failOpen = (err) => {
@@ -73,7 +84,7 @@ export const JewGuard = async ({ client, directory }) => {
         const patterns = Array.isArray(p.patterns) ? p.patterns : [];
         let allow = true;
         try {
-          const r = await assessAction({ tool: p.permission ?? "unknown", input: { permission: p.permission, patterns }, cwd: directory, agent: "opencode", context: await context(sessionID) });
+          const r = await judge({ tool: p.permission ?? "unknown", input: { permission: p.permission, patterns }, cwd: directory, agent: "opencode", context: await context(sessionID) });
           const level = resolveLevel(r?.level ?? null, { yolo: true, soft: isSoft() });
           if (level === "ask") return;  // soft-downgraded deny: leave the prompt standing
           allow = level !== "deny";
@@ -95,6 +106,9 @@ export const JewGuard = async ({ client, directory }) => {
 
     // Inject /jev-workspace and /jev-model so the human can pick billing target and model. No config edits needed.
     "config": async (input) => {
+      if (input.permission === undefined) input.permission = {};
+      if (input.permission && typeof input.permission === "object")
+        for (const t of ASK_BY_DEFAULT) input.permission[t] ??= "ask";
       input.command ??= {};
       if (!input.command[WORKSPACE_COMMAND]) {
         input.command[WORKSPACE_COMMAND] = {
@@ -175,21 +189,16 @@ export const JewGuard = async ({ client, directory }) => {
     "tool.execute.before": async (input, output) => {
       let r;
       try {
-        r = await assessAction({ tool: input.tool, input: output.args, cwd: directory, agent: "opencode", context: await context(input.sessionID) });
+        r = await judge({ tool: input.tool, input: output.args, cwd: directory, agent: "opencode", context: await context(input.sessionID) });
       } catch (err) {
         if (!unjudgedYolo()) return failOpen(err);
         throw new Error(`jew-guard could not judge this call (${err.message}); yolo mode never runs unjudged calls. Fix Jev (pay for the model / /jev-workspace) or run /yolo off.`);
       }
       if (r) remember(input.sessionID, "calls", { tool: input.tool, preview: preview(output.args, 100), level: r.level });
       if (!r || r.level === "allow") return;
-      if (r.level === "deny") {
-        // Soft mode can't prompt from here (no prompt channel pre-execution):
-        // warn and let it through — permission.ask will still prompt wherever
-        // the tool is configured to "ask".
-        if (isSoft()) { toast(`${r.message} (soft mode: continuing — approve at the prompt)`); return; }
-        throw new Error(r.message);
-      }
+      if (r.level === "deny") throw new Error(r.message);  // soft deny→ask happens in permission.ask, where a prompt exists; here there is none, so block
       if (isYolo()) return;  // Jev didn't deny: run silently, no toast
+      // Always toast: the prompt hook judges thinner input and may disagree silently.
       toast(`${r.message} (set permission for ${input.tool} to "ask" in opencode.json to get a real prompt)`);
     },
 
@@ -197,7 +206,7 @@ export const JewGuard = async ({ client, directory }) => {
       const args = { ...(input.metadata ?? {}), pattern: input.pattern, title: input.title };
       let r;
       try {
-        r = await assessAction({ tool: input.type, input: args, cwd: directory, agent: "opencode", context: await context(input.sessionID) });
+        r = await judge({ tool: input.type, input: args, cwd: directory, agent: "opencode", context: await context(input.sessionID) });
       } catch (err) {
         if (!unjudgedYolo()) return failOpen(err);
         toast(`jew-guard could not judge this prompt, leaving it to you: ${err.message}`, "error");
@@ -213,10 +222,10 @@ export const JewGuard = async ({ client, directory }) => {
       const source = input.args?.url ?? input.args?.filePath ?? input.args?.path;
       const instructions = /^skill$/i.test(input.tool ?? "") || (source && INSTRUCTION_FILE.test(source));  // skill passes {name}, no path
       const r = await (instructions
-        ? scanInstructionsCached({ text: output.output, source: source ?? input.args?.name ?? input.tool })
-        : scanContent({ text: output.output, tool: input.tool, source: preview(input.args, 120) })
+        ? scanCached({ text: output.output, source: source ?? input.args?.name ?? input.tool })
+        : scanOut({ text: output.output, tool: input.tool, source: preview(input.args, 120) })
       ).catch(() => null);
-      if (r?.flagged) remember(input.sessionID, "flags", { kind: r.kind, source, tool: input.tool, p: +r.p.toFixed(2), excerpt: excerpt(output.output), reported: true });
+      if (r?.flagged) remember(input.sessionID, "flags", { kind: r.kind, source, tool: input.tool, p: +r.p.toFixed(2), excerpt: excerpt(output.output) });
       if (!r?.flagged) return;
       toast(r.message);
       output.output = `[${r.message}]\n\n${output.output}`;
