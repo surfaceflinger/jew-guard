@@ -47,3 +47,8 @@ test("invalid config.json is refused, not overwritten", () => {
   assert.throws(() => s.run(["model", "set", "jev-1.13"]));
   assert.equal(readFileSync(s.config, "utf8"), "{ oops");
 });
+
+test("auth has no key source: secrets never reach argv or config.json", () => {
+  const s = sandbox();
+  assert.throws(() => s.run(["auth", "--endpoint", "opencode", "--source", "key", "--key", "oc_sk_live"]));
+});

@@ -13,7 +13,6 @@ means jew-guard keeps working the zero-config way (env, opencode auth.json).
   jew-guard model set <id>       save a model pick
 """
 import argparse
-import getpass
 import json
 import os
 import sqlite3
@@ -234,17 +233,15 @@ def cmd_auth(args):
     source = args.source
     if not source:
         if not interactive():
-            sys.exit("jew-guard: pass --source env|db|auth|key (non-interactive)")
+            sys.exit("jew-guard: pass --source env|db|auth (non-interactive)")
         if endpoint == "opencode":
             has_go = "opencode-go" in auth_providers()
             options = [("env", "env         OPENCODE_CONSOLE_TOKEN (opencode session injects it)"),
                        ("db", "db          opencode.db Console account (current /connect login)"),
-                       ("auth", "auth        auth.json provider (opencode-go service key)"),
-                       ("key", "key         enter a key")]
+                       ("auth", "auth        auth.json provider (opencode-go service key)")]
             source = choose("Credential", options, 2 if has_go else (0 if env_token()[0] else 1))
         else:
-            options = [("auth", "auth        auth.json provider"),
-                       ("key", "key         enter a key")] + ([("env", "env         OPENROUTER_API_KEY")] if os.environ.get("OPENROUTER_API_KEY") else [])
+            options = [("auth", "auth        auth.json provider")] + ([("env", "env         OPENROUTER_API_KEY")] if os.environ.get("OPENROUTER_API_KEY") else [])
             source = choose("Credential", options, 0 if endpoint == "openrouter" and "openrouter" in auth_providers() else len(options) - 1)
 
     entry = {"endpoint": endpoint, "url": url}
@@ -266,14 +263,9 @@ def cmd_auth(args):
     elif source == "db":
         token, db_org = db_console()
         if not token:
-            sys.exit("jew-guard: no Console account in opencode.db — log in with /connect, or use --source auth|key")
+            sys.exit("jew-guard: no Console account in opencode.db — log in with /connect, or use --source auth")
         entry["keyEnv"] = "OPENCODE_CONSOLE_TOKEN"  # no secret on disk: the plugin reads the env opencode injects from the same login
         args.workspace = args.workspace or db_org
-    elif source == "key":
-        token = args.key or (getpass.getpass("API key: ") if interactive() else None)
-        if not token:
-            sys.exit("jew-guard: pass --key <value>")
-        entry["key"] = token
     else:
         sys.exit(f"jew-guard: unknown --source \"{source}\"")
 
@@ -281,7 +273,7 @@ def cmd_auth(args):
         # User tokens are not bound to a workspace: Console needs x-opencode-org-id.
         db_token, db_org = db_console()
         if source == "env" and not token and not db_token and not args.workspace:
-            sys.exit(f"jew-guard: {entry['keyEnv']} is not set in this shell — export it, or use --source db|auth|key")
+            sys.exit(f"jew-guard: {entry['keyEnv']} is not set in this shell — export it, or use --source db|auth")
         org = resolve_workspace(token or db_token, args.workspace, db_org or cfg.get("org"))
         if token and not validate_org(token, org["id"]):
             print(f"jew-guard: warning: token rejected for {org['name']} ({org['id']}) — saving anyway", file=sys.stderr)
@@ -347,8 +339,7 @@ def main():
     p_auth = sub.add_parser("auth", help="configure endpoint, credential and workspace")
     p_auth.add_argument("--endpoint", help="opencode | openrouter | custom | <url>")
     p_auth.add_argument("--url", help="override the endpoint URL")
-    p_auth.add_argument("--source", choices=["env", "db", "auth", "key"], help="where the credential comes from")
-    p_auth.add_argument("--key", help="literal API key (stored in config.json, 0600)")
+    p_auth.add_argument("--source", choices=["env", "db", "auth"], help="where the credential comes from (never stored: config holds a reference, not the key)")
     p_auth.add_argument("--key-env", help="env var name for --source env")
     p_auth.add_argument("--provider", help="auth.json provider for --source auth")
     p_auth.add_argument("--workspace", help="Console workspace name or id (opencode endpoint)")
