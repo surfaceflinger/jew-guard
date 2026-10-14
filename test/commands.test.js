@@ -4,6 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { JewGuard } from "../src/opencode.js";
+import { readSession } from "../src/session.js";
 import { setYolo } from "../src/yolo.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "jew-"));
@@ -104,6 +105,32 @@ test("yolo+soft deny passes pre-execution and still prompts", async () => {
     const output = {};
     await plugin["permission.ask"]({ type: "pty_kill", pattern: "pty_1", metadata: {}, sessionID: "s" }, output);
     assert.equal(output.status, "ask");
+  } finally {
+    if (prevYolo === undefined) delete process.env.JEV_GUARD_YOLO;
+    else process.env.JEV_GUARD_YOLO = prevYolo;
+    if (prevSoft === undefined) delete process.env.JEV_GUARD_SOFT;
+    else process.env.JEV_GUARD_SOFT = prevSoft;
+    cleanup();
+  }
+});
+
+test("soft-downgraded deny toasts even in yolo and is remembered as ask", async () => {
+  const cleanup = setup();
+  const prevYolo = process.env.JEV_GUARD_YOLO;
+  const prevSoft = process.env.JEV_GUARD_SOFT;
+  process.env.JEV_GUARD_YOLO = "1";
+  process.env.JEV_GUARD_SOFT = "1";
+  const toasts = [];
+  const loud = {
+    tui: { showToast: async (t) => { toasts.push(t); } },
+    session: { messages: async () => ({ data: [] }) },
+  };
+  try {
+    const deny = { level: "deny", message: "jew-guard blocked this call (risk 3.0/3): pty_kill nodejs" };
+    const plugin = await JewGuard({ client: loud, directory: "/tmp" }, { assessAction: async () => deny });
+    await plugin["tool.execute.before"]({ tool: "pty_kill", sessionID: "s" }, { args: { id: "pty_1" } });
+    assert.match(toasts.map((t) => t.body?.message ?? "").join("\n"), /downgraded/);
+    assert.equal(readSession("s").calls.at(-1).level, "ask");
   } finally {
     if (prevYolo === undefined) delete process.env.JEV_GUARD_YOLO;
     else process.env.JEV_GUARD_YOLO = prevYolo;

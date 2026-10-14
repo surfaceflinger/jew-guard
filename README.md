@@ -40,14 +40,14 @@ instruction overrides. Results are cached by content hash.
 
 ## Permissions are two things with one name
 
-Your `permission` config decides whether the guard gets a say *at all* per
-tool. The Jev **verdict** is our judgment of one single call. They compose
+Your `permission` config decides whether a real approval dialog can appear
+at all. The Jev **verdict** is our judgment of one single call. They compose
 like this:
 
 | your config | Jev verdict | result |
 | --- | --- | --- |
 | `allow` | allow | runs silently |
-| `allow` | ask | runs anyway (toast only — no prompt channel) |
+| `allow` | ask | runs anyway, warning toast only |
 | `allow` | deny | blocked |
 | `ask` | allow | auto-approved, no prompt |
 | `ask` | ask | real approval prompt |
@@ -56,12 +56,20 @@ like this:
 
 With `/soft on`, every `deny` verdict in this table behaves like `ask`.
 
+Limitation to know: the guard's pre-execution check can only block a call
+or let it run — it cannot pop up a prompt by itself. Real approval prompts
+only happen for tools set to `ask`. So under `allow`, an `ask` verdict (or a
+soft-downgraded `deny`) runs with just a warning toast.
+
+For the most predictable security, set `"*": "ask"` and avoid explicit
+`allow`s: then every risky call gets a real prompt and nothing runs silently.
+
 ## Commands
 
 - `/jev-workspace [name]` — pick the billing workspace (bare lists them)
 - `/jev-model [id]` — switch models; test-calls first, keeps the old one on failure
 - `/yolo on|off` — auto-approve everything Jev doesn't deny
-- `/soft on|off` — denies become prompts instead of blocks; without a prompt channel (permission `allow`) the call runs with a warning toast
+- `/soft on|off` — denies become prompts instead of blocks (for tools set to `allow`, the call runs with a warning toast instead — see above)
 
 The agent can't touch any of these — they're human-only by construction.
 
