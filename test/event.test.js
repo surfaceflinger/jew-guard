@@ -9,7 +9,6 @@ const file = () => join(mkdtempSync(join(tmpdir(), "jew-")), "yolo.json");
 const fakeClient = (replies = []) => ({
   tui: { showToast: async () => {} },
   session: { messages: async () => ({ data: [] }) },
-  // NOTE: reply method is top-level on the client, NOT under session.
   postSessionIdPermissionsPermissionId: async (opts) => { replies.push(opts); return { data: {}, error: undefined }; },
 });
 

@@ -30,16 +30,16 @@ test("env overrides apply; out-of-range falls back", () => {
 test("instruction verdicts: serious at 0.45, side-effects at 0.8, unknown is serious", () => {
   assert.equal(judgeInstructions("clean", 0.99), false);
   assert.equal(judgeInstructions("exfiltration", 0.45), true);
-  assert.equal(judgeInstructions("canary", 0.34), false);  // margin band starts at 0.35
+  assert.equal(judgeInstructions("canary", 0.34), false);
   assert.equal(judgeInstructions("canary", 0.35), true);
-  assert.equal(judgeInstructions("unrelated_side_effects", 0.69), false);  // band starts at 0.7
+  assert.equal(judgeInstructions("unrelated_side_effects", 0.69), false);
   assert.equal(judgeInstructions("unrelated_side_effects", 0.7), true);
   assert.equal(judgeInstructions("unknown", 0.5), true);
 });
 test("margin band: near-miss approval asks, near-miss plant asks", () => {
-  assert.equal(decide(A(0.5, 0.7)).level, "ask");  // askP 0.75 - margin 0.1
+  assert.equal(decide(A(0.5, 0.7)).level, "ask");
   assert.equal(decide(A(0.5, 0.6)).level, "allow");
-  assert.equal(decide(A(0.5, 0.1, 0, 0.65)).level, "ask");  // untrustedP 0.7 - margin
+  assert.equal(decide(A(0.5, 0.1, 0, 0.65)).level, "ask");
 });
 test("risk tail mass asks even when the mean looks calm", () => {
   const a = { risk: { score: 1.0, probabilities: { 0: 0.3, 2: 0.7 } }, approval: { p: 0 }, user_requested: { p: 0 }, from_untrusted: { p: 0 } };
@@ -64,7 +64,7 @@ test("contested kind flags as the hostile runner-up", () => {
   assert.equal(inst.kind, "exfiltration");
 });
 test("approval band holds on exact float boundaries with custom thresholds", () => {
-  const t = thresholds({ JEV_GUARD_ASK_P: "0.8" });  // 0.8 - 0.1 is 0.7000000000000001 in floats
+  const t = thresholds({ JEV_GUARD_ASK_P: "0.8" });
   assert.equal(decide(A(0.5, 0.7), t).level, "ask");
 });
 

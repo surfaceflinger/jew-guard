@@ -1,42 +1,38 @@
-// What Jev gets to see besides the tool call itself: the user's recent words, the agent's stated intent,
-// the last few decisions, and anything flagged as untrusted earlier in the session.
-// Sources: the session store plus whatever the plugin reads back via client.session.messages().
 import { readSession } from "./session.js";
 
-const MAX_TEXT = 700;
+const MAX_MESSAGE_CHARS = 700;
 
 export function buildContext({ sessionId, messages } = {}) {
-  const s = readSession(sessionId);
-  const prompts = (messages ?? []).filter((m) => m.role === "user").map((m) => m.text);
-  const intents = (messages ?? []).filter((m) => m.role === "assistant").map((m) => m.text);
-  const ctx = {
-    user_recent_messages: dedupe(prompts).slice(-3).map(clip),
-    assistant_intent: clip(intents.at(-1) ?? ""),
-    recent_tool_calls: s.calls.slice(-6).map((c) => `${c.tool} ${c.preview}${c.level && c.level !== "allow" ? ` [${c.level}]` : ""}`),
-    flagged_untrusted_content: s.flags.slice(-5).map((f) => `${f.kind} from ${f.source ?? f.tool ?? "unknown"}${f.p ? ` (p=${f.p})` : ""}${f.excerpt ? `: "${f.excerpt}"` : ""}`),
+  const session = readSession(sessionId);
+  const prompts = (messages ?? []).filter((message) => message.role === "user").map((message) => message.text);
+  const intents = (messages ?? []).filter((message) => message.role === "assistant").map((message) => message.text);
+  const context = {
+    user_recent_messages: dedupe(prompts).slice(-3).map(clipText),
+    assistant_intent: clipText(intents.at(-1) ?? ""),
+    recent_tool_calls: session.calls.slice(-6).map((call) => `${call.tool} ${call.preview}${call.level && call.level !== "allow" ? ` [${call.level}]` : ""}`),
+    flagged_untrusted_content: session.flags.slice(-5).map((flag) => `${flag.kind} from ${flag.source ?? flag.tool ?? "unknown"}${flag.p ? ` (p=${flag.p})` : ""}${flag.excerpt ? `: "${flag.excerpt}"` : ""}`),
   };
-  for (const k of Object.keys(ctx)) if (!ctx[k] || ctx[k].length === 0) delete ctx[k];
-  return Object.keys(ctx).length ? ctx : undefined;
+  for (const key of Object.keys(context)) if (!context[key] || context[key].length === 0) delete context[key];
+  return Object.keys(context).length ? context : undefined;
 }
 
-const clip = (s) => (s.length > MAX_TEXT ? s.slice(0, MAX_TEXT) + "…" : s);
-const dedupe = (arr) => arr.filter((x, i) => x && arr.indexOf(x) === i);
+const clipText = (text) => (text.length > MAX_MESSAGE_CHARS ? text.slice(0, MAX_MESSAGE_CHARS) + "…" : text);
+const dedupe = (texts) => texts.filter((text, index) => text && texts.indexOf(text) === index);
 
-/** Text of every user/assistant message from opencode's session.messages() ({info:{role}, parts:[{type,text}]}) or pi-style entries. */
 export function messagesFrom(entries) {
-  const out = [];
-  for (const e of entries ?? []) {
-    const m = e.message ?? e;
-    const role = m.role ?? e.info?.role;
+  const messages = [];
+  for (const entry of entries ?? []) {
+    const message = entry.message ?? entry;
+    const role = message.role ?? entry.info?.role;
     if (role !== "user" && role !== "assistant") continue;
-    const text = textOf(m.content) || textOf(e.parts);
-    if (text) out.push({ role, text });
+    const text = textOf(message.content) || textOf(entry.parts);
+    if (text) messages.push({ role, text });
   }
-  return out.slice(-8);
+  return messages.slice(-8);
 }
 
 function textOf(content) {
   if (typeof content === "string") return content.trim();
   if (!Array.isArray(content)) return "";
-  return content.filter((b) => b?.type === "text" && typeof b.text === "string").map((b) => b.text.trim()).filter(Boolean).join("\n");
+  return content.filter((block) => block?.type === "text" && typeof block.text === "string").map((block) => block.text.trim()).filter(Boolean).join("\n");
 }

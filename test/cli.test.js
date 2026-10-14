@@ -1,5 +1,3 @@
-// The CLI writes the auth config; a regression here would ship silently.
-// Runs Python directly (the nix-shell shebang is only for invoking it by hand).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";

@@ -5,8 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { effectiveModel, readModel, saveModel } from "../src/model.js";
 
-// config.json and legacy model.json both live in temp dirs; the plugin reads the
-// real ~/.config/jew-guard/* by default, so every test isolates both paths.
 function isolate({ config, legacy } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "jew-"));
   const prev = { c: process.env.JEV_GUARD_CONFIG_FILE, m: process.env.JEV_GUARD_MODEL_FILE };
@@ -68,10 +66,10 @@ test("deleteModel removes the pick and keeps the rest of config.json", async () 
   try {
     const { deleteModel } = await import("../src/model.js");
     deleteModel();
-    assert.equal(readModel(), "from-legacy");  // config cleared → legacy fallback shows again
+    assert.equal(readModel(), "from-legacy");
     const config = JSON.parse(readFileSync(iso.path, "utf8"));
     assert.equal(config.model, undefined);
     assert.equal(config.endpoint, "openrouter");
-    deleteModel(); // idempotent, no throw
+    deleteModel();
   } finally { iso.restore(); }
 });

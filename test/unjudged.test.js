@@ -1,6 +1,3 @@
-// Yolo only auto-approves calls Jev actually judged: when Jev cannot answer
-// (no funds, bad model/workspace, network), prompts stay for the human and
-// pre-execution calls are blocked — never a silent allow.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
@@ -19,8 +16,8 @@ function setup() {
   const saved = {};
   for (const k of CLEAR) { saved[k] = process.env[k]; delete process.env[k]; }
   process.env.JEV_GUARD_YOLO_FILE = yoloFile;
-  process.env.XDG_DATA_HOME = dir;  // no auth.json: no credential resolution, no network
-  process.env.XDG_CONFIG_HOME = dir;  // no config.json either
+  process.env.XDG_DATA_HOME = dir;
+  process.env.XDG_CONFIG_HOME = dir;
   setYolo(true, yoloFile);
   return () => { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } };
 }

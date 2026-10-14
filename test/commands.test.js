@@ -29,19 +29,15 @@ test("command hook throws (stops the turn) for ours, passes others through", asy
   try {
     const plugin = await JewGuard({ client, directory: "/tmp" });
     const hook = plugin["command.execute.before"];
-    // unrelated command: no throw, no parts
     const untouched = {};
     await hook({ command: "init", sessionID: "s", arguments: "" }, untouched);
     assert.equal(untouched.parts ?? null, null);
-    // bare /yolo: throws with state, no network
     setYolo(true, process.env.JEV_GUARD_YOLO_FILE);
     await assert.rejects(hook({ command: "/yolo", sessionID: "s", arguments: "" }, {}), /jew-guard: yolo mode is ON/);
     setYolo(false, process.env.JEV_GUARD_YOLO_FILE);
     await assert.rejects(hook({ command: "yolo", sessionID: "s", arguments: "" }, {}), /jew-guard: yolo mode is OFF/);
     await assert.rejects(hook({ command: "yolo", sessionID: "s", arguments: "maybe" }, {}), /usage: \/yolo on\|off/);
-    // /yolo off via hook actually flips state
     await assert.rejects(hook({ command: "yolo", sessionID: "s", arguments: "on" }, {}), /jew-guard: yolo mode ON/);
-    // bare /jev-model: throws with default, no network
     await assert.rejects(hook({ command: "/jev-model", sessionID: "s", arguments: "" }, {}), /jew-guard: model: jev-1.13-free \(from default\)/);
   } finally { cleanup(); }
 });

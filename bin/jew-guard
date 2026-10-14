@@ -23,7 +23,6 @@ import urllib.request
 HOME = os.path.expanduser("~")
 CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config"), "jew-guard")
 CONFIG_FILE = os.environ.get("JEV_GUARD_CONFIG_FILE") or os.path.join(CONFIG_DIR, "config.json")
-# Pre-config.json picks; read-only here, migrated on the next save (plugin reads them too).
 LEGACY_MODEL = os.environ.get("JEV_GUARD_MODEL_FILE") or os.path.join(CONFIG_DIR, "model.json")
 LEGACY_WORKSPACE = os.environ.get("JEV_GUARD_WORKSPACE_FILE") or os.path.join(CONFIG_DIR, "workspace.json")
 OPENCODE_DATA = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"), "opencode")
@@ -202,7 +201,7 @@ def resolve_workspace(token, want, org_hint):
         if hit:
             return hit
         if orgs is None and hint.lower().startswith(("wrk_", "org_")):
-            return {"id": hint, "name": hint}  # cannot list with this token; keep the known id
+            return {"id": hint, "name": hint}
     if not orgs:
         sys.exit("jew-guard: need a workspace id (wrk_/org_...) — the token cannot list workspaces")
     if not interactive():
@@ -264,13 +263,12 @@ def cmd_auth(args):
         token, db_org = db_console()
         if not token:
             sys.exit("jew-guard: no Console account in opencode.db — log in with /connect, or use --source auth")
-        entry["keyEnv"] = "OPENCODE_CONSOLE_TOKEN"  # no secret on disk: the plugin reads the env opencode injects from the same login
+        entry["keyEnv"] = "OPENCODE_CONSOLE_TOKEN"
         args.workspace = args.workspace or db_org
     else:
         sys.exit(f"jew-guard: unknown --source \"{source}\"")
 
     if endpoint == "opencode" and not str(token or "").startswith("oc_sk_"):
-        # User tokens are not bound to a workspace: Console needs x-opencode-org-id.
         db_token, db_org = db_console()
         if source == "env" and not token and not db_token and not args.workspace:
             sys.exit(f"jew-guard: {entry['keyEnv']} is not set in this shell — export it, or use --source db|auth")

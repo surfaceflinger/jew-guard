@@ -7,7 +7,6 @@ import { ask, backend, OPENROUTER_URL } from "../src/jev.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "jew-"));
 const res = (status, body) => ({ ok: status < 300, status, text: async () => JSON.stringify(body), json: async () => body });
-// env for every test: no real auth.json, no real config.json.
 const env = (extra = {}) => ({ XDG_DATA_HOME: tmp(), XDG_CONFIG_HOME: tmp(), ...extra });
 const withConfig = (config, extra = {}) => {
   const dir = tmp();
