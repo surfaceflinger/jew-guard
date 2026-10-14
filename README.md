@@ -54,12 +54,14 @@ like this:
 | `ask` | deny | refused |
 | `deny` | anything | blocked by the platform; the guard never sees it |
 
+With `/soft on`, every `deny` verdict in this table behaves like `ask`.
+
 ## Commands
 
 - `/jev-workspace [name]` — pick the billing workspace (bare lists them)
 - `/jev-model [id]` — switch models; test-calls first, keeps the old one on failure
 - `/yolo on|off` — auto-approve everything Jev doesn't deny
-- `/soft on|off` — denies become prompts instead of blocks wherever the tool can prompt; pre-execution denies still block
+- `/soft on|off` — denies become prompts instead of blocks; without a prompt channel (permission `allow`) the call runs with a warning toast
 
 The agent can't touch any of these — they're human-only by construction.
 

@@ -170,15 +170,16 @@ export const JewGuard = async ({ client, directory }, deps = {}) => {
         if (!unjudgedYolo()) return failOpen(err);
         throw new Error(`jew-guard could not judge this call (${err.message}); yolo mode never runs unjudged calls. Fix Jev (pay for the model / /jev-workspace) or run /yolo off.`);
       }
+      const level = verdict ? resolveLevel(verdict.level, { yolo: isYolo(), soft: isSoft() }) : null;
       if (verdict) remember(input.sessionID, "calls", {
         tool: input.tool,
         preview: preview(output.args, 100),
-        level: verdict.level,
+        level,
       });
-      if (!verdict || verdict.level === "allow") return;
-      if (verdict.level === "deny") throw new Error(verdict.message);
-      if (isYolo()) return;
-      toast(`${verdict.message} (set permission for ${input.tool} to "ask" in opencode.json to get a real prompt)`);
+      if (!level || level === "allow") return;
+      if (level === "deny") throw new Error(verdict.message);
+      if (verdict.level === "deny") toast(`${verdict.message} (soft mode: downgraded — approve at the prompt)`);
+      else if (!isYolo()) toast(`${verdict.message} (set permission for ${input.tool} to "ask" in opencode.json to get a real prompt)`);
     },
 
     "permission.ask": async (input, output) => {

@@ -64,25 +64,49 @@ test("config hook defaults bash/edit/webfetch to ask without overriding", async 
   } finally { cleanup(); }
 });
 
-test("before-hook blocks deny even in soft mode; permission.ask turns soft deny into a prompt", async () => {
+test("before-hook lets soft deny through to the prompt; hard deny still blocks", async () => {
   const cleanup = setup();
   const prevSoft = process.env.JEV_GUARD_SOFT;
   process.env.JEV_GUARD_SOFT = "1";
   try {
     const deny = { level: "deny", message: "jew-guard blocked this call (risk 3.0/3): bash rm -rf /" };
     const plugin = await JewGuard({ client, directory: "/tmp" }, { assessAction: async () => deny });
+    await plugin["tool.execute.before"]({ tool: "bash", sessionID: "s" }, { args: { command: "rm -rf /" } });
+    const output = {};
+    await plugin["permission.ask"]({ type: "bash", pattern: "rm -rf /", metadata: {}, sessionID: "s" }, output);
+    assert.equal(output.status, "ask");
+    delete process.env.JEV_GUARD_SOFT;
     await assert.rejects(
       plugin["tool.execute.before"]({ tool: "bash", sessionID: "s" }, { args: { command: "rm -rf /" } }),
       /blocked this call/,
     );
-    const output = {};
-    await plugin["permission.ask"]({ type: "bash", pattern: "rm -rf /", metadata: {}, sessionID: "s" }, output);
-    assert.equal(output.status, "ask");
     const pluginAllow = await JewGuard({ client, directory: "/tmp" }, { assessAction: async () => ({ level: "allow", message: "ok" }) });
     const outAllow = {};
     await pluginAllow["permission.ask"]({ type: "read", pattern: "f", metadata: {}, sessionID: "s" }, outAllow);
     assert.equal(outAllow.status, "allow");
   } finally {
+    if (prevSoft === undefined) delete process.env.JEV_GUARD_SOFT;
+    else process.env.JEV_GUARD_SOFT = prevSoft;
+    cleanup();
+  }
+});
+
+test("yolo+soft deny passes pre-execution and still prompts", async () => {
+  const cleanup = setup();
+  const prevYolo = process.env.JEV_GUARD_YOLO;
+  const prevSoft = process.env.JEV_GUARD_SOFT;
+  process.env.JEV_GUARD_YOLO = "1";
+  process.env.JEV_GUARD_SOFT = "1";
+  try {
+    const deny = { level: "deny", message: "jew-guard blocked this call (risk 3.0/3): pty_kill nodejs" };
+    const plugin = await JewGuard({ client, directory: "/tmp" }, { assessAction: async () => deny });
+    await plugin["tool.execute.before"]({ tool: "pty_kill", sessionID: "s" }, { args: { id: "pty_1" } });
+    const output = {};
+    await plugin["permission.ask"]({ type: "pty_kill", pattern: "pty_1", metadata: {}, sessionID: "s" }, output);
+    assert.equal(output.status, "ask");
+  } finally {
+    if (prevYolo === undefined) delete process.env.JEV_GUARD_YOLO;
+    else process.env.JEV_GUARD_YOLO = prevYolo;
     if (prevSoft === undefined) delete process.env.JEV_GUARD_SOFT;
     else process.env.JEV_GUARD_SOFT = prevSoft;
     cleanup();
