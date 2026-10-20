@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { consoleToken } from "./auth.js";
 import { readConfig, updateConfig } from "./config.js";
 import { configDir } from "./paths.js";
 
@@ -8,9 +9,7 @@ const CONSOLE_CONFIG_URL = "https://opencode.ai/console/api/v2/config";
 
 const legacyFile = () => process.env.JEV_GUARD_WORKSPACE_FILE ?? join(configDir(), "workspace.json");
 
-export function consoleToken(env = process.env) {
-  return env.OPENCODE_CONSOLE_TOKEN || env.OPENCODE_API_KEY || null;
-}
+export { consoleToken };
 
 export async function listWorkspaces({ env = process.env, fetchImpl = fetch } = {}) {
   const token = consoleToken(env);

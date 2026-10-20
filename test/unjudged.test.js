@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { JewGuard } from "../src/opencode.js";
+import { loadPlugin } from "./harness.js";
 import { setYolo } from "../src/yolo.js";
 
 const CLEAR = ["JEV_BASE_URL", "JEV_BASE_API_KEY", "OPENCODE_CONSOLE_TOKEN", "OPENCODE_API_KEY", "JEV_API_KEY", "OPENROUTER_API_KEY",
@@ -22,39 +22,32 @@ function setup() {
   return () => { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } };
 }
 
-const client = (replies) => ({
-  tui: { showToast: async () => {} },
-  session: { messages: async () => ({ data: [] }) },
-  postSessionIdPermissionsPermissionId: async (o) => { replies.push(o); return { data: {}, error: undefined }; },
+test("yolo falls back to the configured rule when Jev cannot answer", async () => {
+  const restore = setup();
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const plugin = await loadPlugin({ assessAction: async () => { throw new Error("offline"); } });
+    const call = { tool: "shell", sessionID: "ses_1", messageID: "msg_1", id: "call_1", input: { command: "rm -rf /" } };
+    await plugin.hooks["execute.before"](call);
+    const event = { action: "shell", resources: ["rm -rf /"], effect: "ask", sessionID: "ses_1", source: { type: "tool", messageID: "msg_1", id: "call_1" } };
+    await plugin.hooks.evaluate(event);
+    assert.equal(event.effect, "ask");
+  } finally {
+    console.warn = warn;
+    restore();
+  }
 });
 
-test("yolo does not auto-reply permission.asked when Jev cannot answer", async () => {
-  const restore = setup();
-  const replies = [];
-  try {
-    const plugin = await JewGuard({ client: client(replies), directory: "/tmp" });
-    await plugin.event({ event: { type: "permission.asked", properties: { id: "per_1", sessionID: "ses_1", permission: "bash", patterns: ["rm -rf /"] } } });
-    assert.equal(replies.length, 0);
-  } finally { restore(); }
-});
-
-test("yolo leaves the permission prompt to the human when Jev cannot answer", async () => {
+test("without yolo an unjudgeable call fails open", async () => {
   const restore = setup();
   try {
-    const plugin = await JewGuard({ client: client([]), directory: "/tmp" });
-    const output = {};
-    await plugin["permission.ask"]({ type: "bash", pattern: "rm -rf /", metadata: {}, sessionID: "ses_1" }, output);
-    assert.equal(output.status, undefined);
-  } finally { restore(); }
-});
-
-test("yolo blocks a call it could not judge when Jev cannot answer", async () => {
-  const restore = setup();
-  try {
-    const plugin = await JewGuard({ client: client([]), directory: "/tmp" });
-    await assert.rejects(
-      plugin["tool.execute.before"]({ tool: "bash", sessionID: "ses_1" }, { args: { command: "rm -rf /" } }),
-      /yolo mode never runs unjudged calls/,
-    );
+    setYolo(false, process.env.JEV_GUARD_YOLO_FILE);
+    const plugin = await loadPlugin({ assessAction: async () => { throw new Error("offline"); } });
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      await plugin.hooks["execute.before"]({ tool: "shell", sessionID: "ses_1", input: { command: "echo hi" } });
+    } finally { console.warn = warn; }
   } finally { restore(); }
 });

@@ -11,11 +11,6 @@ export function readModes(file = modeFile()) {
   } catch { return { yolo: false, soft: false, at: null }; }
 }
 
-export function readYolo(file = modeFile()) {
-  const modes = readModes(file);
-  return { on: modes.yolo, at: modes.at };
-}
-
 function writeModes(state, file = modeFile()) {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   writeFileSync(file, JSON.stringify(state) + "\n", { mode: 0o600 });
@@ -34,10 +29,16 @@ export function setSoft(enabled, file = modeFile()) {
 }
 
 export function resolveLevel(level, { yolo = false, soft = false } = {}) {
-  if (level === "deny") return soft ? "ask" : "deny";
+  if (level === "deny") return yolo && soft ? "ask" : "deny";
   if (level === null) return yolo ? "allow" : null;
-  if (level === "ask") return yolo ? "allow" : "ask";
-  return "allow";
+  return level;
+}
+
+export function resolveEffect(level, effect, { yolo = false, soft = false } = {}) {
+  if (level === "deny") return yolo && soft ? "ask" : "deny";
+  if (level === "ask") return "ask";
+  if (level === "allow") return effect === "ask" && !yolo ? "ask" : "allow";
+  return yolo ? "allow" : effect;
 }
 
 function isEnvOn(value) {

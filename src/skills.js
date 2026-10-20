@@ -1,24 +1,28 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { MIN_SCAN_CHARS, scanInstructions, thresholds, verdictInstructions } from "./guard.js";
+import { scanInstructions, shouldScan, thresholds, verdictInstructions } from "./guard.js";
+import { effectiveModel } from "./model.js";
 import { configDir } from "./paths.js";
 
 const cacheFile = () => process.env.JEV_GUARD_SCAN_CACHE ?? join(configDir(), "scan-cache.json");
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 5000;
 
 export async function scanInstructionsCached({ text, source }, options = {}) {
-  if (!text || text.length < MIN_SCAN_CHARS) return null;
-  const limits = thresholds(options.env ?? process.env);
-  const cacheKey = createHash("sha1").update(text).digest("hex");
+  if (!shouldScan(text)) return null;
+  const env = options.env ?? process.env;
+  const limits = thresholds(env);
+  const model = effectiveModel(env).model;
+  const cacheKey = createHash("sha1").update(`${model}\0${text}`).digest("hex");
   const cached = readCache()[cacheKey];
-  if (cached?.v === CACHE_VERSION) {
+  if (cached?.v === CACHE_VERSION && Date.now() - (cached.at ?? 0) < CACHE_TTL_MS) {
     const cachedAnswer = { malicious: { p: cached.p }, kind: { choice: cached.kind, probabilities: cached.probs, confidence: cached.conf } };
     return { ...verdictInstructions(cachedAnswer, source, limits), cached: true };
   }
   const fresh = await scanInstructions({ text, source }, options);
-  writeCache({ ...readCache(), [cacheKey]: { v: CACHE_VERSION, kind: fresh.kind, p: +fresh.p.toFixed(2), probs: fresh.probs, conf: fresh.confidence, at: Date.now() } });
+  writeCache({ ...readCache(), [cacheKey]: { v: CACHE_VERSION, kind: fresh.kind, p: fresh.p, probs: fresh.probs, conf: fresh.confidence, at: Date.now() } });
   return { ...fresh, cached: false };
 }
 

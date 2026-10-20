@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isYolo, readYolo, setYolo } from "../src/yolo.js";
+import { isYolo, readModes, setYolo } from "../src/yolo.js";
 
 const file = () => join(mkdtempSync(join(tmpdir(), "jew-")), "yolo.json");
 
@@ -14,11 +14,11 @@ test("roundtrip + env forcing", () => {
   process.env.JEV_GUARD_YOLO_FILE = f;
   delete process.env.JEV_GUARD_YOLO;
   try {
-    assert.equal(readYolo(f).on, false);
+    assert.equal(readModes(f).yolo, false);
     setYolo(true, f);
-    assert.equal(readYolo(f).on, true);
+    assert.equal(readModes(f).yolo, true);
     setYolo(false, f);
-    assert.equal(readYolo(f).on, false);
+    assert.equal(readModes(f).yolo, false);
     assert.equal(isYolo({ ...process.env, JEV_GUARD_YOLO: "1" }), true);
     assert.equal(isYolo({ ...process.env }), false);
   } finally {
@@ -48,12 +48,30 @@ test("resolveLevel matrix", async () => {
   assert.equal(t("ask", {}), "ask");
   assert.equal(t("deny", {}), "deny");
   assert.equal(t(null, {}), null);
-  assert.equal(t("ask", { yolo: true }), "allow");
+  assert.equal(t("ask", { yolo: true }), "ask");
   assert.equal(t(null, { yolo: true }), "allow");
   assert.equal(t("deny", { yolo: true }), "deny");
-  assert.equal(t("deny", { soft: true }), "ask");
+  assert.equal(t("deny", { soft: true }), "deny");
   assert.equal(t("deny", { yolo: true, soft: true }), "ask");
   assert.equal(t("ask", { soft: true }), "ask");
+});
+
+test("resolveEffect matrix", async () => {
+  const { resolveEffect } = await import("../src/yolo.js");
+  const t = (level, effect, opts) => resolveEffect(level, effect, opts);
+  assert.equal(t("allow", "allow", {}), "allow");
+  assert.equal(t("allow", "ask", {}), "ask");
+  assert.equal(t("allow", "ask", { yolo: true }), "allow");
+  assert.equal(t("ask", "allow", {}), "ask");
+  assert.equal(t("ask", "allow", { yolo: true }), "ask");
+  assert.equal(t("ask", "ask", {}), "ask");
+  assert.equal(t("ask", "ask", { yolo: true }), "ask");
+  assert.equal(t(null, "allow", {}), "allow");
+  assert.equal(t(null, "ask", {}), "ask");
+  assert.equal(t(null, "ask", { yolo: true }), "allow");
+  assert.equal(t("deny", "ask", {}), "deny");
+  assert.equal(t("deny", "ask", { soft: true }), "deny");
+  assert.equal(t("deny", "ask", { yolo: true, soft: true }), "ask");
 });
 
 test("soft flag roundtrip", async () => {

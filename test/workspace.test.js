@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { matchWorkspace } from "../src/workspace.js";
@@ -31,4 +31,13 @@ test("selection reads config.json org, then the legacy workspace.json", async ()
     if (prev.c === undefined) delete process.env.JEV_GUARD_CONFIG_FILE; else process.env.JEV_GUARD_CONFIG_FILE = prev.c;
     if (prev.w === undefined) delete process.env.JEV_GUARD_WORKSPACE_FILE; else process.env.JEV_GUARD_WORKSPACE_FILE = prev.w;
   }
+});
+
+test("console token falls back to the opencode service key", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "jew-"));
+  mkdirSync(join(dir, "opencode"), { recursive: true });
+  writeFileSync(join(dir, "opencode", "auth.json"), JSON.stringify({ "opencode-go": { key: "oc_sk_test" } }));
+  const { consoleToken } = await import("../src/auth.js");
+  assert.equal(consoleToken({ XDG_DATA_HOME: dir }), "oc_sk_test");
+  assert.equal(consoleToken({ OPENCODE_API_KEY: "api-key" }), "api-key");
 });

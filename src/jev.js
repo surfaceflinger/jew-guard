@@ -1,9 +1,7 @@
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { readConfig } from "./config.js";
 import { resolveWorkspace } from "./workspace.js";
 import { effectiveModel } from "./model.js";
+import { authKey, serviceKey } from "./auth.js";
 
 export const CONSOLE_URL = "https://opencode.ai/inference/v1/systemone";
 export const TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone";
@@ -16,7 +14,7 @@ const LOOPBACK = new Set(["localhost", "[::1]"]);
 export async function backend(env = process.env) {
   const stored = readConfig(env);
   if (stored && (stored.endpoint || stored.key || stored.keyEnv || stored.keyProvider)) return backendFromConfig(stored, env);
-  if (env.JEV_BASE_URL) return { kind: "custom", key: env.JEV_BASE_API_KEY, url: systemOneUrl(env.JEV_BASE_URL) };
+  if (env.JEV_BASE_URL) return { kind: "custom", key: env.JEV_BASE_API_KEY ?? env.JEV_API_KEY, url: systemOneUrl(env.JEV_BASE_URL) };
   const consoleKey = env.OPENCODE_CONSOLE_TOKEN || env.OPENCODE_API_KEY;
   if (consoleKey) {
     let workspace = null, workspaceError = null;
@@ -41,19 +39,6 @@ function backendFromConfig(config, env) {
   const key = config.keyEnv ? env[config.keyEnv] : config.keyProvider ? authKey(config.keyProvider, env) : config.key;
   if (!key) throw new Error(`jew-guard config: ${config.keyEnv ? `env ${config.keyEnv} is not set` : `auth.json provider "${config.keyProvider}" has no key`}; run jew-guard auth`);
   return { kind, key, url, orgId: config.org ?? null };
-}
-
-export function serviceKey(env = process.env) {
-  return authKey("opencode-go", env) ?? authKey("opencode", env);
-}
-
-function authKey(provider, env) {
-  try {
-    const dataDir = env.XDG_DATA_HOME || join(homedir(), ".local", "share");
-    const stored = JSON.parse(readFileSync(join(dataDir, "opencode", "auth.json"), "utf8"))?.[provider]?.key;
-    if (typeof stored === "string" && stored.trim()) return stored.trim();
-  } catch {}
-  return null;
 }
 
 function checkUrl(url, label) {
@@ -130,9 +115,12 @@ async function request(target, state, questions, { env = process.env, fetchImpl 
   if (!response.ok) throw new Error(`${target.kind} HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
   const body = await response.json();
   const providerConfidence = body.providerMetadata?.typesafe?.confidence ?? {};
-  return mapValues(body.answers, (answer, id) => ({
-    p: answer.noul ?? answer.probability, choice: answer.choice, score: answer.score, probabilities: answer.probabilities,
-    confidence: answer.confidence ?? providerConfidence[id],
+  return mapValues(body.answers ?? {}, (answer, id) => ({
+    p: finiteNumber(answer?.noul ?? answer?.probability),
+    choice: typeof answer?.choice === "string" ? answer.choice : undefined,
+    score: finiteNumber(answer?.score),
+    probabilities: probabilityMap(answer?.probabilities),
+    confidence: finiteNumber(answer?.confidence ?? providerConfidence?.[id]),
   }));
 }
 
@@ -144,6 +132,18 @@ function sleep(ms, signal) {
     signal.addEventListener("abort", onAbort, { once: true });
   });
 }
+
+const finiteNumber = (value) => {
+  const number = typeof value === "string" ? Number(value) : value;
+  return Number.isFinite(number) ? number : undefined;
+};
+
+const probabilityMap = (value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return Object.fromEntries(Object.entries(value)
+    .map(([key, probability]) => [key, finiteNumber(probability)])
+    .filter(([, probability]) => probability !== undefined));
+};
 
 function mapValues(obj, transform) {
   return Object.fromEntries(Object.entries(obj).map(([key, value]) => [key, transform(value, key)]));

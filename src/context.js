@@ -23,9 +23,9 @@ export function messagesFrom(entries) {
   const messages = [];
   for (const entry of entries ?? []) {
     const message = entry.message ?? entry;
-    const role = message.role ?? entry.info?.role;
+    const role = message.role ?? message.type ?? entry.info?.role;
     if (role !== "user" && role !== "assistant") continue;
-    const text = textOf(message.content) || textOf(entry.parts);
+    const text = (typeof message.text === "string" ? message.text.trim() : "") || textOf(message.content) || textOf(entry.parts);
     if (text) messages.push({ role, text });
   }
   return messages.slice(-8);

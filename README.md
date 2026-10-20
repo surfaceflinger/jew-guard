@@ -3,17 +3,16 @@
 Security guard for opencode, powered by Jev (TypeSafe System One). Every tool
 call is risk-scored before it runs; every result is scanned for prompt injection
 after. A from-scratch port of [jev-guard](https://github.com/leepokai/jev-guard),
-opencode-only, one dependency (the opencode plugin API).
+opencode-only, one dependency (the opencode v2 plugin API).
 
 ## Install
 
 ```json
-{ "plugin": ["jew-guard"] }
+{ "plugins": ["jew-guard"] }
 ```
 
-Restart opencode. `bash`/`edit`/`webfetch` default to `"ask"`, so risky calls
-prompt out of the box while safe ones auto-approve. Override per tool in
-`opencode.json` as usual.
+Restart opencode. Risky calls prompt out of the box while safe ones
+auto-approve. Override the `permissions` rules in `opencode.json` as usual.
 
 First run needs two things: `/connect` (your normal OpenCode login), then
 `/jev-workspace` to pick which Console workspace pays for the Jev calls.
@@ -23,53 +22,113 @@ Single-workspace accounts can skip the second step.
 
 **Before a call runs**, Jev scores it: risk 0–3, plus three yes/no questions —
 should a human approve this, did the user actually ask for it, does it follow
-planted instructions? Deny blocks, ask prompts, allow runs. An explicit user
-request overrides ask, never deny. Anything you're unsure about (low model
-confidence, borderline scores) prompts instead of passing.
+planted instructions? Deny blocks, ask needs approval, allow leaves the call
+to your rules. An explicit user request overrides ask inside Jev's verdict,
+never deny. Anything you're unsure about (low model confidence, borderline
+scores) prompts instead of passing.
 
 **After a call returns**, the output is scanned for injections and canaries.
-Flags get prepended to the output and remembered, so the next call can be
-judged against them.
+Only completed calls are scanned; failures are not. If the scan itself fails,
+the result is marked untrusted and logged. Flags get prepended to the output
+and remembered, so the next call can be judged against them.
+
+**Warnings** go to the opencode logs. V2 server plugins cannot show toasts, so
+mode changes, fail-open notices, and flagged results appear there; flagged
+tool results also carry the warning in their content.
 
 **Skills and instruction files** (`AGENTS.md`, `SKILL.md`, rules…) are scanned
 for behavior their installer wouldn't expect — exfiltration, hidden commands,
-instruction overrides. Results are cached by content hash.
+instruction overrides. Results are cached by content and model for 7 days.
 
-**If Jev can't be reached**, the guard allows with a warning. Set
-`JEV_GUARD_FAIL_CLOSED` to block instead.
+**If Jev can't be reached**, the guard gets out of the way: it logs a warning
+and your opencode `permissions` rules decide, exactly as without the plugin.
+That means the V2 default may let the call run. Set `JEV_GUARD_FAIL_CLOSED` to
+block instead. See [your rules and Jev's verdict](#your-rules-and-jevs-verdict).
 
-## Permissions are two things with one name
+## Your rules and Jev's verdict
 
-Your `permission` config decides whether a real approval dialog can appear
-at all. The Jev **verdict** is our judgment of one single call. They compose
-like this:
+opencode applies your `permissions` rules first; the Jev **verdict** is our
+judgment of one single call. Read-only tools (`read`, `grep`, `glob`,
+`websearch`, `skill`, the guard's own status tools) skip Jev and follow your
+rules. Everything else — `shell`, `edit`/`write`/`patch`, `webfetch`, MCP
+tools — is judged. Permission prompts that are not tied to a tool call (for
+example `external_directory`) are left to your rules; Jev does not judge them.
 
-| your config | Jev verdict | result |
+Rules use V2 action names, and the last matching rule wins:
+
+```jsonc
+"permissions": [
+  { "action": "shell", "resource": "*", "effect": "ask" },
+  { "action": "shell", "resource": "git status *", "effect": "allow" },
+  { "action": "shell", "resource": "git push *", "effect": "deny" }
+]
+```
+
+### Decision table
+
+Jev is reachable. `high` means confidence at or above
+`JEV_GUARD_MIN_CONFIDENCE` (default `0.5`); `low` means below it.
+
+| your rule | Jev verdict | confidence | `/soft` | `/yolo` | result |
+| --- | --- | --- | --- | --- | --- |
+| `allow` | `allow` | high | any | any | runs silently |
+| `allow` | `allow` | low | any | any | approval prompt (allow becomes ask) |
+| `allow` | `ask` | any | any | any | approval prompt |
+| `ask` | `allow` | high | any | off | approval prompt |
+| `ask` | `allow` | high | any | on | runs silently |
+| `ask` | `allow` | low | any | any | approval prompt |
+| `ask` | `ask` | any | any | any | approval prompt |
+| `allow` or `ask` | `deny` | any | any | off | blocked (`/soft` has no effect) |
+| `allow` or `ask` | `deny` | any | off | on | blocked |
+| `allow` or `ask` | `deny` | any | on | on | approval prompt; approving runs |
+| read-only or skipped | not judged | — | any | off | your rules decide |
+| read-only or skipped | not judged | — | any | on | prompts are auto-approved |
+
+Confidence is independent of `/yolo`: a low-confidence `allow` becomes an
+`ask` and prompts. A Jev `ask` also always prompts, with or without `/yolo`.
+For judged tools, `/yolo` only auto-approves a platform `ask` rule when Jev
+says `allow` with high confidence. Read-only and skipped-tool prompts are
+auto-approved. Non-tool checks such as `external_directory` are left to your
+rules and are not auto-approved. `/soft` works only together with `/yolo`; a
+yolo deny then becomes an approval prompt. Without `/yolo`, `/soft` does
+nothing.
+
+Jev is unreachable:
+
+| your rules | `JEV_GUARD_FAIL_CLOSED` | `/soft` | `/yolo` | result |
+| --- | --- | --- | --- | --- |
+| `allow` | unset | any | any | runs, like plain opencode |
+| `ask` | unset | any | any | approval prompt |
+| `allow` or `ask` | set | any | any | blocked |
+| read-only or skipped | any | any | off | your rules decide |
+| read-only or skipped | any | any | on | prompts are auto-approved |
+| `deny` | any | any | any | blocked by opencode |
+
+`/soft` has no effect while Jev is down because there is no deny verdict to
+downgrade. A narrow configured deny may still be sent to Jev before the
+platform blocks it.
+
+Configured `deny` is final and does not depend on Jev:
+
+| your rule | Jev | result |
 | --- | --- | --- |
-| `allow` | allow | runs silently |
-| `allow` | ask | runs anyway, warning toast only |
-| `allow` | deny | blocked |
-| `ask` | allow | auto-approved, no prompt |
-| `ask` | ask | real approval prompt |
-| `ask` | deny | refused |
-| `deny` | anything | blocked by the platform; the guard never sees it |
+| `resource: "*"` | not called | tool is removed and never offered |
+| narrower resource | may be called | opencode blocks the call; the guard may block first |
 
-With `/soft on`, every `deny` verdict in this table behaves like `ask`.
+If a third-party plugin tool never calls `permission.assert`, no prompt can be
+shown; an `ask` verdict runs without one.
 
-Limitation to know: the guard's pre-execution check can only block a call
-or let it run — it cannot pop up a prompt by itself. Real approval prompts
-only happen for tools set to `ask`. So under `allow`, an `ask` verdict (or a
-soft-downgraded `deny`) runs with just a warning toast.
-
-For the most predictable security, set `"*": "ask"` and avoid explicit
-`allow`s: then every risky call gets a real prompt and nothing runs silently.
+Every non-read-only call is judged, even one your rules allow. The verdict is
+reused by the permission prompt, so each guarded tool call normally costs one
+Jev request. Ambiguous concurrent Code Mode calls are judged again and can
+cost two. Code Mode nested calls count separately.
 
 ## Commands
 
 - `/jev-workspace [name]` — pick the billing workspace (bare lists them)
-- `/jev-model [id]` — switch models; test-calls first, keeps the old one on failure
-- `/yolo on|off` — auto-approve everything Jev doesn't deny
-- `/soft on|off` — denies become prompts instead of blocks (for tools set to `allow`, the call runs with a warning toast instead — see above)
+- `/jev-model [id]` — switch models; test-calls first, keeps the old one on failure. `JEV_MODEL` wins; unset it to switch
+- `/yolo on|off` — auto-approve platform prompts when Jev confidently allows
+- `/soft on|off` — with yolo, deny verdicts become prompts instead of blocks
 
 The agent can't touch any of these — they're human-only by construction.
 
@@ -92,8 +151,9 @@ The agent can't touch any of these — they're human-only by construction.
 | `JEV_MODEL` / `JEV_BASE_URL` / `JEV_API_KEY` | unset | model override / custom server / direct key |
 | `OPENROUTER_API_KEY` | unset | fallback judge when Jev fails (free tier trains on prompts) |
 
-Out-of-range numbers fall back to defaults. Old `model.json` / `workspace.json`
-picks still work as fallbacks. `bin/jew-guard` writes static config for
+Out-of-range numbers fall back to defaults. The skip lists use V2 action
+names (`shell`, not `bash`). Old `model.json` / `workspace.json` picks still
+work as fallbacks. `bin/jew-guard` writes static config for
 multi-workspace or OpenRouter-only setups — `jew-guard auth` walks you through it.
 
 ## Privacy

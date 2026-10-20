@@ -96,6 +96,29 @@ test("ask with fallback:false or FAIL_CLOSED never calls OpenRouter", async () =
   assert.deepEqual(calls, ["https://kev.example/v1/systemone", "https://kev.example/v1/systemone"]);
 });
 
+test("JEV_BASE_URL accepts the documented JEV_API_KEY", async () => {
+  const b = await backend(env({ JEV_BASE_URL: "https://kev.example", JEV_API_KEY: "secret" }));
+  assert.deepEqual(b, { kind: "custom", key: "secret", url: "https://kev.example/v1/systemone" });
+});
+
+test("answer numbers are normalized and missing fields stay missing", async () => {
+  const body = { answers: {
+    risk: { score: "0.4" },
+    approval: { noul: "0.2" },
+    user_requested: {},
+    from_untrusted: { noul: null },
+  } };
+  const a = await ask({ q: 1 }, QUESTIONS, {
+    env: env({ JEV_BASE_URL: "https://kev.example", JEV_API_KEY: "secret" }),
+    fetchImpl: async () => res(200, body),
+  });
+  assert.equal(a.risk.score, 0.4);
+  assert.equal(a.approval.p, 0.2);
+  assert.equal(a.risk.p, undefined);
+  assert.equal(a.user_requested.p, undefined);
+  assert.equal(a.from_untrusted.p, undefined);
+});
+
 test("JEV_MODEL env wins over the config.json model", async () => {
   let body;
   const e = withConfig({ endpoint: "opencode", url: "https://example.test/v1/systemone", key: "st_test", model: "from-config" }, { JEV_MODEL: "from-env" });
