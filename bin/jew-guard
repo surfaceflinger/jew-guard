@@ -4,7 +4,7 @@
 
 Writes ~/.config/jew-guard/config.json: endpoint, credential reference and
 workspace. Run it when zeroconf auto-detection is not enough — no config file
-means jew-guard keeps working the zero-config way (env, opencode auth.json).
+means jew-guard keeps working the zero-config way (env, opencode credentials).
 
   jew-guard auth                 pick endpoint, credential source, workspace
   jew-guard auth --endpoint opencode --source auth --provider opencode-go
@@ -139,8 +139,35 @@ def db_console():
     return None, None
 
 
+def db_credentials():
+    """{provider: {"type": "api", "key": ...}} from the opencode.db credential rows."""
+    out = {}
+    for path in db_paths():
+        try:
+            con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        except sqlite3.Error:
+            continue
+        try:
+            rows = con.execute("select integration_id, value from credential"
+                               " where integration_id is not null order by active desc")
+            for provider, value in rows:
+                try:
+                    key = json.loads(value).get("key")
+                except Exception:
+                    continue
+                if isinstance(key, str) and key.strip():
+                    out.setdefault(provider, {"type": "api", "key": key.strip()})
+        except sqlite3.Error:
+            pass
+        finally:
+            con.close()
+    return out
+
+
 def auth_providers():
-    return read_json(os.path.join(OPENCODE_DATA, "auth.json"), {}) or {}
+    """opencode v2 keeps provider keys in opencode.db; auth.json is only the legacy fallback."""
+    legacy = read_json(os.path.join(OPENCODE_DATA, "auth.json"), {}) or {}
+    return {**legacy, **db_credentials()}
 
 
 def env_token():
@@ -237,10 +264,10 @@ def cmd_auth(args):
             has_go = "opencode-go" in auth_providers()
             options = [("env", "env         OPENCODE_CONSOLE_TOKEN (opencode session injects it)"),
                        ("db", "db          opencode.db Console account (current /connect login)"),
-                       ("auth", "auth        auth.json provider (opencode-go service key)")]
+                       ("auth", "auth        provider key (opencode.db or auth.json)")]
             source = choose("Credential", options, 2 if has_go else (0 if env_token()[0] else 1))
         else:
-            options = [("auth", "auth        auth.json provider")] + ([("env", "env         OPENROUTER_API_KEY")] if os.environ.get("OPENROUTER_API_KEY") else [])
+            options = [("auth", "auth        provider key (opencode.db or auth.json)")] + ([("env", "env         OPENROUTER_API_KEY")] if os.environ.get("OPENROUTER_API_KEY") else [])
             source = choose("Credential", options, 0 if endpoint == "openrouter" and "openrouter" in auth_providers() else len(options) - 1)
 
     entry = {"endpoint": endpoint, "url": url}
@@ -259,11 +286,11 @@ def cmd_auth(args):
         if not provider:
             providers = [p for p, v in auth_providers().items() if isinstance(v, dict) and v.get("key")]
             if not interactive() or not providers:
-                sys.exit("jew-guard: pass --provider <name> (auth.json providers: %s)" % ", ".join(providers))
+                sys.exit("jew-guard: pass --provider <name> (known providers: %s)" % ", ".join(providers))
             provider = choose("Provider", [(p, p) for p in providers])
         token = (auth_providers().get(provider) or {}).get("key")
         if not token:
-            sys.exit(f"jew-guard: auth.json has no provider \"{provider}\" with a key")
+            sys.exit(f"jew-guard: no key for provider \"{provider}\" in opencode.db or auth.json")
         entry["keyProvider"] = provider
     elif source == "db":
         token, db_org = db_console()
@@ -297,7 +324,7 @@ def cmd_auth(args):
         entry["model"] = model
     write_json(CONFIG_FILE, entry)
     print(f"endpoint  {endpoint} ({url})")
-    print(f"auth      {'env ' + entry['keyEnv'] if entry.get('keyEnv') else 'auth.json provider ' + entry['keyProvider'] if entry.get('keyProvider') else 'key stored in config'}")
+    print(f"auth      {'env ' + entry['keyEnv'] if entry.get('keyEnv') else 'provider ' + entry['keyProvider'] if entry.get('keyProvider') else 'key stored in config'}")
     if entry.get("org"):
         print(f"workspace {entry['orgName']} ({entry['org']})")
     print(f"model     {entry.get('model') or '(default)'}")
@@ -353,7 +380,7 @@ def main():
     p_auth.add_argument("--url", help="override the endpoint URL")
     p_auth.add_argument("--source", choices=["env", "db", "auth"], help="where the credential comes from (never stored: config holds a reference, not the key)")
     p_auth.add_argument("--key-env", help="env var name for --source env")
-    p_auth.add_argument("--provider", help="auth.json provider for --source auth")
+    p_auth.add_argument("--provider", help="provider key in opencode.db or auth.json for --source auth")
     p_auth.add_argument("--workspace", help="Console workspace name or id (opencode endpoint)")
     p_auth.add_argument("--model", help="model id to save (default: endpoint default)")
     p_auth.set_defaults(func=cmd_auth)

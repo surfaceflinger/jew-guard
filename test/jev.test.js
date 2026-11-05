@@ -1,11 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ask, backend, OPENROUTER_URL } from "../src/jev.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "jew-"));
+const sqlite = (() => {
+  try { return createRequire(import.meta.url)("node:sqlite"); } catch { return null; }
+})();
 const res = (status, body) => ({ ok: status < 300, status, text: async () => JSON.stringify(body), json: async () => body });
 const env = (extra = {}) => ({ XDG_DATA_HOME: tmp(), XDG_CONFIG_HOME: tmp(), ...extra });
 const withConfig = (config, extra = {}) => {
@@ -25,6 +29,18 @@ test("backend falls back to the opencode-go service key in auth.json", async () 
   }));
   const b = await backend(env({ XDG_DATA_HOME: dir }));
   assert.deepEqual(b, { kind: "console", key: "oc_sk_test", orgId: null });
+});
+
+test("backend reads the service key from opencode.db, ahead of a stale auth.json", { skip: !sqlite && "node:sqlite unavailable" }, async () => {
+  const dir = tmp();
+  mkdirSync(join(dir, "opencode"), { recursive: true });
+  writeFileSync(join(dir, "opencode", "auth.json"), JSON.stringify({ "opencode-go": { type: "api", key: "oc_sk_stale" } }));
+  const db = new sqlite.DatabaseSync(join(dir, "opencode", "opencode.db"));
+  db.exec("create table credential (id text primary key, integration_id text, label text not null, value text not null, active integer)");
+  db.prepare("insert into credential (id, integration_id, label, value, active) values (?, ?, ?, ?, 1)")
+    .run("c1", "opencode-go", "OpenCode Go", JSON.stringify({ type: "key", key: "oc_sk_db" }));
+  db.close();
+  assert.deepEqual(await backend(env({ XDG_DATA_HOME: dir })), { kind: "console", key: "oc_sk_db", orgId: null });
 });
 
 test("backend without any credential returns null", async () => {
