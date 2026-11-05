@@ -39,6 +39,22 @@ test("auth stores the provider reference, never the key", () => {
   assert.ok(!config.includes("sk-or-secret"));
 });
 
+test("auth reads the provider key from opencode.db when auth.json is gone", () => {
+  const s = sandbox();
+  mkdirSync(join(s.data, "opencode"), { recursive: true });
+  execFileSync("python3", ["-c", `
+import json, sqlite3, sys
+con = sqlite3.connect(sys.argv[1])
+con.execute("create table credential (id text primary key, integration_id text, label text not null, value text not null, active integer)")
+con.execute("insert into credential values ('c1', 'openrouter', 'OpenRouter', ?, 1)", (json.dumps({"type": "key", "key": "sk-or-db"}),))
+con.commit()
+`, join(s.data, "opencode", "opencode.db")]);
+  s.run(["auth", "--endpoint", "openrouter", "--source", "auth"]);
+  const config = readFileSync(s.config, "utf8");
+  assert.equal(JSON.parse(config).keyProvider, "openrouter");
+  assert.ok(!config.includes("sk-or-db"));
+});
+
 test("invalid config.json is refused, not overwritten", () => {
   const s = sandbox();
   writeFileSync(s.config, "{ oops");

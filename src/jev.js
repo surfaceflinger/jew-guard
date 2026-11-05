@@ -37,7 +37,7 @@ function backendFromConfig(config, env) {
   if (!url) throw new Error(`jew-guard config: endpoint "${config.endpoint}" needs a url; run jew-guard auth`);
   checkUrl(url, "jew-guard config url");
   const key = config.keyEnv ? env[config.keyEnv] : config.keyProvider ? authKey(config.keyProvider, env) : config.key;
-  if (!key) throw new Error(`jew-guard config: ${config.keyEnv ? `env ${config.keyEnv} is not set` : `auth.json provider "${config.keyProvider}" has no key`}; run jew-guard auth`);
+  if (!key) throw new Error(`jew-guard config: ${config.keyEnv ? `env ${config.keyEnv} is not set` : `no credential for provider "${config.keyProvider}" in auth.json or opencode.db`}; run jew-guard auth`);
   return { kind, key, url, orgId: config.org ?? null };
 }
 
