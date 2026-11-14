@@ -4,6 +4,7 @@ export async function loadPlugin(deps = {}, overrides = {}) {
   const hooks = {};
   const tools = {};
   const commands = {};
+  let rpc;
   const ctx = {
     location: { directory: "/tmp" },
     session: { context: async () => [] },
@@ -33,8 +34,14 @@ export async function loadPlugin(deps = {}, overrides = {}) {
         hooks[name] = callback;
       },
     },
+    rpc: {
+      register: async (definition, handlers) => {
+        rpc = { definition, handlers };
+        return { events: { emit: async () => {} } };
+      },
+    },
     ...overrides,
   };
   await createJewGuard(deps).setup(ctx);
-  return { hooks, tools, commands, ctx };
+  return { hooks, tools, commands, rpc, ctx };
 }

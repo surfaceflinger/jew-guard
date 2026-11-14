@@ -10,7 +10,9 @@
   "exports": {
     ".": "./src/opencode.js",
     "./guard": "./src/guard.js",
-    "./jev": "./src/jev.js"
+    "./jev": "./src/jev.js",
+    "./rpc": "./src/rpc.js",
+    "./tui": "./src/tui.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js"
@@ -19,7 +21,7 @@
     "node": ">=20.3"
   },
   "dependencies": {
-    "@opencode/plugin": "2.2.5"
+    "@opencode/plugin": "2.3.0"
   },
   "files": [
     "src/",
@@ -42,5 +44,8 @@
     "url": "git+https://github.com/surfaceflinger/jew-guard.git"
   },
   "homepage": "https://github.com/surfaceflinger/jew-guard#readme",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "solid-js": "^1.9.19"
+  }
 }

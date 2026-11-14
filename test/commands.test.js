@@ -17,12 +17,16 @@ const setup = () => {
   process.env.JEV_GUARD_WORKSPACE_FILE = join(dir, "workspace.json");
   process.env.JEV_GUARD_CONFIG_FILE = join(dir, "config.json");
   process.env.JEV_GUARD_SESSIONS = join(dir, "sessions");
+  const previousData = process.env.XDG_DATA_HOME;
+  process.env.XDG_DATA_HOME = join(dir, "data");
   return () => {
     delete process.env.JEV_GUARD_YOLO_FILE;
     delete process.env.JEV_GUARD_MODEL_FILE;
     delete process.env.JEV_GUARD_WORKSPACE_FILE;
     delete process.env.JEV_GUARD_CONFIG_FILE;
     delete process.env.JEV_GUARD_SESSIONS;
+    if (previousData === undefined) delete process.env.XDG_DATA_HOME;
+    else process.env.XDG_DATA_HOME = previousData;
   };
 };
 
@@ -54,6 +58,36 @@ test("commands are registered and report or toggle their state", async () => {
       run(plugin, "jev-model"),
       /jew-guard: model: jev-1.13-free \(from default\)/,
     );
+  } finally {
+    cleanup();
+  }
+});
+
+test("rpc handlers reuse the command logic", async () => {
+  const cleanup = setup();
+  try {
+    const plugin = await loadPlugin({ probeModel: async () => 0.9 });
+    assert.equal(plugin.rpc.definition.id, "jew-guard");
+    assert.deepEqual(Object.keys(plugin.rpc.handlers).sort(), [
+      "model",
+      "soft",
+      "workspace",
+      "workspaces",
+      "yolo",
+    ]);
+    const yolo = await plugin.rpc.handlers.yolo({ text: "on" });
+    assert.equal(yolo.variant, "success");
+    assert.match(yolo.message, /yolo mode ON/);
+    const soft = await plugin.rpc.handlers.soft({ text: "on" });
+    assert.match(soft.message, /soft mode ON/);
+    const model = await plugin.rpc.handlers.model({ text: "jev-1.13" });
+    assert.match(model.message, /switched to jev-1\.13/);
+    const workspaces = await plugin.rpc.handlers.workspaces({});
+    assert.deepEqual(workspaces.items, []);
+    assert.match(workspaces.message, /no Console credential/);
+    const workspace = await plugin.rpc.handlers.workspace({ text: "missing" });
+    assert.equal(workspace.variant, "error");
+    assert.match(workspace.message, /no Console credential/);
   } finally {
     cleanup();
   }

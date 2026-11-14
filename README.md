@@ -134,6 +134,12 @@ instead of reusing it. Code Mode nested calls count separately.
 
 The agent can't touch any of these — they're human-only by construction.
 
+In the TUI, a bundled TUI part handles the same four commands: results appear
+as toasts, and bare `/jev-workspace` opens a picker. It calls the server
+through an RPC, so the guard state is the same as with the server commands.
+Desktop, web, and headless clients keep the server commands, where text can
+only surface as a command error.
+
 ## Tuning
 
 | Variable | Default | Effect |

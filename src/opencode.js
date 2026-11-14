@@ -27,6 +27,7 @@ import {
   setSoft,
   setYolo,
 } from "./yolo.js";
+import { JewGuardRpc } from "./rpc.js";
 
 const WORKSPACE_COMMAND = "jev-workspace";
 const MODEL_COMMAND = "jev-model";
@@ -148,87 +149,121 @@ export function createJewGuard(deps = {}) {
         );
         return null;
       };
-      const stopWith = (text) => {
-        throw new Error(`jew-guard: ${text}`);
-      };
-      const toggleMode = async (name, arg) => {
+      const toggleMode = (name, arg) => {
         const softCommand = name === SOFT_COMMAND;
         const modeOn = () => (softCommand ? isSoft() : isYolo());
         const setMode = (on) => (softCommand ? setSoft(on) : setYolo(on));
         const label = softCommand ? "soft" : "yolo";
-        const want = arg.toLowerCase();
-        if (!arg) {
-          stopWith(
-            `${label} mode is ${modeOn() ? "ON" : "OFF"}. Run /${label} on|off.`,
-          );
-        }
-        if (want !== "on" && want !== "off") {
-          stopWith(
-            `usage: /${label} on|off (currently ${modeOn() ? "on" : "off"}).`,
-          );
-        }
+        const want = String(arg ?? "").toLowerCase();
+        if (!arg)
+          return {
+            message: `${label} mode is ${modeOn() ? "ON" : "OFF"}. Run /${label} on|off.`,
+            variant: "info",
+          };
+        if (want !== "on" && want !== "off")
+          return {
+            message: `usage: /${label} on|off (currently ${modeOn() ? "on" : "off"}).`,
+            variant: "warning",
+          };
         setMode(want === "on");
         notify(`${label} mode ${want === "on" ? "enabled" : "disabled"}`);
-        stopWith(
-          `${label} mode ${want === "on" ? "ON" : "OFF"}.` +
+        return {
+          message:
+            `${label} mode ${want === "on" ? "ON" : "OFF"}.` +
             (softCommand && want === "on"
               ? " With yolo on, Jev denies now prompt instead of blocking."
               : ""),
-        );
+          variant: "success",
+        };
       };
       const pickWorkspace = async (arg) => {
         const status = await workspaceStatus(process.env);
-        if (!status.hasToken) {
-          stopWith("no Console credential — run /connect first.");
-        }
-        if (status.error) stopWith(`workspace lookup failed: ${status.error}`);
-        if (!arg) {
-          stopWith(
-            status.spaces
-              .map((workspace) => workspaceLine(workspace, status.selected))
-              .join("\n") +
+        if (!status.hasToken)
+          return {
+            message: "no Console credential — run /connect first.",
+            variant: "error",
+          };
+        if (status.error)
+          return {
+            message: `workspace lookup failed: ${status.error}`,
+            variant: "error",
+          };
+        if (!arg)
+          return {
+            message:
+              status.spaces
+                .map((workspace) => workspaceLine(workspace, status.selected))
+                .join("\n") +
               (status.selected
                 ? ""
                 : "\nRe-run as /jev-workspace <name> to pick."),
-          );
-        }
+            variant: "info",
+          };
         const match = matchWorkspace(status.spaces, arg);
-        if (!match) {
-          stopWith(
-            `unknown workspace "${arg}". Known: ${status.spaces.map((workspace) => workspace.name).join(", ")}.`,
-          );
-        }
-        if (!(await validateWorkspace(match))) {
-          stopWith(`token rejected for "${match.name}" — not saved.`);
-        }
+        if (!match)
+          return {
+            message: `unknown workspace "${arg}". Known: ${status.spaces.map((workspace) => workspace.name).join(", ")}.`,
+            variant: "error",
+          };
+        if (!(await validateWorkspace(match)))
+          return {
+            message: `token rejected for "${match.name}" — not saved.`,
+            variant: "error",
+          };
         saveSelection(match);
-        stopWith(`Jev calls will bill to "${match.name}". Saved.`);
+        return {
+          message: `Jev calls will bill to "${match.name}". Saved.`,
+          variant: "success",
+        };
       };
       const pickModel = async (arg) => {
         const current = effectiveModel(process.env);
-        if (!arg) {
-          stopWith(
-            `model: ${current.model} (from ${current.source}). Re-run as /jev-model <id> to switch.`,
-          );
-        }
-        if (process.env.JEV_MODEL) {
-          stopWith(
-            "JEV_MODEL is set and wins over a saved model; unset it to switch.",
-          );
-        }
+        if (!arg)
+          return {
+            message: `model: ${current.model} (from ${current.source}). Re-run as /jev-model <id> to switch.`,
+            variant: "info",
+          };
+        if (process.env.JEV_MODEL)
+          return {
+            message:
+              "JEV_MODEL is set and wins over a saved model; unset it to switch.",
+            variant: "warning",
+          };
         let probability;
         try {
           probability = await probe(arg);
         } catch (error) {
-          stopWith(
-            `the guard endpoint did not answer on "${arg}": ${error.message} Previous model kept.`,
-          );
+          return {
+            message: `the guard endpoint did not answer on "${arg}": ${error.message} Previous model kept.`,
+            variant: "error",
+          };
         }
         saveModel(arg);
-        stopWith(
-          `switched to ${arg} (the guard endpoint answered, p=${probability.toFixed(2)}). Saved.`,
-        );
+        return {
+          message: `switched to ${arg} (the guard endpoint answered, p=${probability.toFixed(2)}). Saved.`,
+          variant: "success",
+        };
       };
+      const workspaceChoices = async () => {
+        const status = await workspaceStatus(process.env);
+        if (!status.hasToken)
+          return {
+            current: "",
+            items: [],
+            message: "no Console credential — run /connect first.",
+          };
+        if (status.error)
+          return {
+            current: "",
+            items: [],
+            message: `workspace lookup failed: ${status.error}`,
+          };
+        return {
+          current: status.selected?.id ?? "",
+          items: status.spaces.map(({ id, name }) => ({ id, name })),
+        };
+      };
+
       let contextCache = null;
       const context = async (sessionID, turnID) => {
         if (
@@ -250,8 +285,10 @@ export function createJewGuard(deps = {}) {
           editor.add({
             name,
             description,
-            execute: async ({ prompt }) =>
-              run(String(prompt?.text ?? "").trim()),
+            execute: async ({ prompt }) => {
+              const { message } = await run(String(prompt?.text ?? "").trim());
+              throw new Error(`jew-guard: ${message}`);
+            },
           });
         add(
           WORKSPACE_COMMAND,
@@ -273,6 +310,14 @@ export function createJewGuard(deps = {}) {
           "Toggle soft mode: with yolo, Jev denies become approval prompts instead of blocks",
           (arg) => toggleMode(SOFT_COMMAND, arg),
         );
+      });
+
+      await ctx.rpc.register(JewGuardRpc, {
+        yolo: async ({ text }) => toggleMode(YOLO_COMMAND, text),
+        soft: async ({ text }) => toggleMode(SOFT_COMMAND, text),
+        model: async ({ text }) => pickModel(text),
+        workspace: async ({ text }) => pickWorkspace(text),
+        workspaces: async () => workspaceChoices(),
       });
 
       await ctx.tool.hook("execute.before", async (event) => {
