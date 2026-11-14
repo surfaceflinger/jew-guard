@@ -3,8 +3,10 @@ import { join } from "node:path";
 import { readConfig, updateConfig } from "./config.js";
 import { configDir } from "./paths.js";
 
-const legacyFile = (env = process.env) => env.JEV_GUARD_MODEL_FILE ?? join(configDir(env), "model.json");
-const trimmedOrNull = (model) => typeof model === "string" && model.trim() ? model.trim() : null;
+const legacyFile = (env = process.env) =>
+  env.JEV_GUARD_MODEL_FILE ?? join(configDir(env), "model.json");
+const trimmedOrNull = (model) =>
+  typeof model === "string" && model.trim() ? model.trim() : null;
 
 function savedModel(env = process.env) {
   const configured = trimmedOrNull(readConfig(env)?.model);
@@ -33,6 +35,9 @@ export function effectiveModel(env = process.env, backendKind = "console") {
   if (env.JEV_MODEL) return { model: env.JEV_MODEL, source: "JEV_MODEL" };
   const saved = savedModel(env);
   if (saved) return saved;
-  const defaults = { console: "jev-1.13-free", openrouter: "inception/mercury-decide:free" };
+  const defaults = {
+    console: "jev-1.13-free",
+    openrouter: "inception/mercury-decide:free",
+  };
   return { model: defaults[backendKind] ?? "jev-latest", source: "default" };
 }

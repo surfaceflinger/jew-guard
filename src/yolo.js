@@ -2,13 +2,20 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { configDir } from "./paths.js";
 
-const modeFile = () => process.env.JEV_GUARD_YOLO_FILE ?? join(configDir(), "yolo.json");
+const modeFile = () =>
+  process.env.JEV_GUARD_YOLO_FILE ?? join(configDir(), "yolo.json");
 
 export function readModes(file = modeFile()) {
   try {
     const saved = JSON.parse(readFileSync(file, "utf8"));
-    return { yolo: !!saved.yolo || !!saved.on, soft: !!saved.soft, at: saved.at ?? null };
-  } catch { return { yolo: false, soft: false, at: null }; }
+    return {
+      yolo: !!saved.yolo || !!saved.on,
+      soft: !!saved.soft,
+      at: saved.at ?? null,
+    };
+  } catch {
+    return { yolo: false, soft: false, at: null };
+  }
 }
 
 function writeModes(state, file = modeFile()) {
@@ -34,7 +41,11 @@ export function resolveLevel(level, { yolo = false, soft = false } = {}) {
   return level;
 }
 
-export function resolveEffect(level, effect, { yolo = false, soft = false } = {}) {
+export function resolveEffect(
+  level,
+  effect,
+  { yolo = false, soft = false } = {},
+) {
   if (level === "deny") return yolo && soft ? "ask" : "deny";
   if (level === "ask") return "ask";
   if (level === "allow") return effect === "ask" && !yolo ? "ask" : "allow";

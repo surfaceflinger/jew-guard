@@ -22,7 +22,8 @@ test("roundtrip + env forcing", () => {
     assert.equal(isYolo({ ...process.env, JEV_GUARD_YOLO: "1" }), true);
     assert.equal(isYolo({ ...process.env }), false);
   } finally {
-    if (prevFile !== undefined) process.env.JEV_GUARD_YOLO_FILE = prevFile; else delete process.env.JEV_GUARD_YOLO_FILE;
+    if (prevFile !== undefined) process.env.JEV_GUARD_YOLO_FILE = prevFile;
+    else delete process.env.JEV_GUARD_YOLO_FILE;
     if (prevFlag !== undefined) process.env.JEV_GUARD_YOLO = prevFlag;
   }
 });
@@ -88,7 +89,8 @@ test("soft flag roundtrip", async () => {
     assert.equal(isSoft({}), false);
     assert.equal(isSoft({ JEV_GUARD_SOFT: "1" }), true);
   } finally {
-    if (prevFile !== undefined) process.env.JEV_GUARD_YOLO_FILE = prevFile; else delete process.env.JEV_GUARD_YOLO_FILE;
+    if (prevFile !== undefined) process.env.JEV_GUARD_YOLO_FILE = prevFile;
+    else delete process.env.JEV_GUARD_YOLO_FILE;
     if (prevFlag !== undefined) process.env.JEV_GUARD_SOFT = prevFlag;
   }
 });

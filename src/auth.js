@@ -6,11 +6,14 @@ import { isAbsolute, join } from "node:path";
 // node:sqlite is synchronous, so credential lookup stays sync; older Node throws and we fall back.
 const require = createRequire(import.meta.url);
 
-const opencodeDir = (env) => join(env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "opencode");
+const opencodeDir = (env) =>
+  join(env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "opencode");
 
 function fileKey(provider, env) {
   try {
-    const stored = JSON.parse(readFileSync(join(opencodeDir(env), "auth.json"), "utf8"))?.[provider]?.key;
+    const stored = JSON.parse(
+      readFileSync(join(opencodeDir(env), "auth.json"), "utf8"),
+    )?.[provider]?.key;
     if (typeof stored === "string" && stored.trim()) return stored.trim();
   } catch {}
   return null;
@@ -36,12 +39,18 @@ function dbKey(provider, env) {
     let db;
     try {
       db = new DatabaseSync(path, { readOnly: true });
-      const row = db.prepare("select value from credential where integration_id = ? order by active desc limit 1").get(provider);
+      const row = db
+        .prepare(
+          "select value from credential where integration_id = ? order by active desc limit 1",
+        )
+        .get(provider);
       const key = row && JSON.parse(row.value)?.key;
       if (typeof key === "string" && key.trim()) return key.trim();
     } catch {
     } finally {
-      try { db?.close(); } catch {}
+      try {
+        db?.close();
+      } catch {}
     }
   }
   return null;
@@ -56,5 +65,10 @@ export function serviceKey(env = process.env) {
 }
 
 export function consoleToken(env = process.env) {
-  return env.OPENCODE_CONSOLE_TOKEN || env.OPENCODE_API_KEY || serviceKey(env) || null;
+  return (
+    env.OPENCODE_CONSOLE_TOKEN ||
+    env.OPENCODE_API_KEY ||
+    serviceKey(env) ||
+    null
+  );
 }

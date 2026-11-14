@@ -23,7 +23,10 @@ test("malformed session arrays are replaced and writes keep working", () => {
   const warn = console.warn;
   console.warn = () => {};
   try {
-    writeFileSync(sessionFile("s"), JSON.stringify({ calls: null, flags: null }));
+    writeFileSync(
+      sessionFile("s"),
+      JSON.stringify({ calls: null, flags: null }),
+    );
     assert.deepEqual(readSession("s"), { calls: [], flags: [] });
     assert.doesNotThrow(() => remember("s", "calls", { tool: "shell" }));
     assert.equal(readSession("s").calls.length, 1);
@@ -51,8 +54,11 @@ test("session write failures do not throw", () => {
 test("prune keeps the session directory at the configured cap", () => {
   const { dir, restore } = setup();
   try {
-    for (let index = 0; index < 205; index++) writeFileSync(join(dir, `${index}.json`), "{}");
+    for (let index = 0; index < 205; index++)
+      writeFileSync(join(dir, `${index}.json`), "{}");
     remember("s", "calls", { tool: "shell" });
     assert.ok(readdirSync(dir).length <= 200);
-  } finally { restore(); }
+  } finally {
+    restore();
+  }
 });

@@ -19,7 +19,12 @@ function sandbox() {
     XDG_DATA_HOME: data,
     JEV_GUARD_CONFIG_FILE: config,
   };
-  return { config, data, run: (args) => execFileSync("python3", [CLI, ...args], { env, encoding: "utf8" }) };
+  return {
+    config,
+    data,
+    run: (args) =>
+      execFileSync("python3", [CLI, ...args], { env, encoding: "utf8" }),
+  };
 }
 
 test("model set writes config.json", () => {
@@ -31,7 +36,10 @@ test("model set writes config.json", () => {
 test("auth stores the provider reference, never the key", () => {
   const s = sandbox();
   mkdirSync(join(s.data, "opencode"), { recursive: true });
-  writeFileSync(join(s.data, "opencode", "auth.json"), JSON.stringify({ openrouter: { type: "api", key: "sk-or-secret" } }));
+  writeFileSync(
+    join(s.data, "opencode", "auth.json"),
+    JSON.stringify({ openrouter: { type: "api", key: "sk-or-secret" } }),
+  );
   s.run(["auth", "--endpoint", "openrouter", "--source", "auth"]);
   const config = readFileSync(s.config, "utf8");
   assert.equal(JSON.parse(config).keyProvider, "openrouter");
@@ -42,13 +50,17 @@ test("auth stores the provider reference, never the key", () => {
 test("auth reads the provider key from opencode.db when auth.json is gone", () => {
   const s = sandbox();
   mkdirSync(join(s.data, "opencode"), { recursive: true });
-  execFileSync("python3", ["-c", `
+  execFileSync("python3", [
+    "-c",
+    `
 import json, sqlite3, sys
 con = sqlite3.connect(sys.argv[1])
 con.execute("create table credential (id text primary key, integration_id text, label text not null, value text not null, active integer)")
 con.execute("insert into credential values ('c1', 'openrouter', 'OpenRouter', ?, 1)", (json.dumps({"type": "key", "key": "sk-or-db"}),))
 con.commit()
-`, join(s.data, "opencode", "opencode.db")]);
+`,
+    join(s.data, "opencode", "opencode.db"),
+  ]);
   s.run(["auth", "--endpoint", "openrouter", "--source", "auth"]);
   const config = readFileSync(s.config, "utf8");
   assert.equal(JSON.parse(config).keyProvider, "openrouter");
@@ -64,5 +76,15 @@ test("invalid config.json is refused, not overwritten", () => {
 
 test("auth has no key source: secrets never reach argv or config.json", () => {
   const s = sandbox();
-  assert.throws(() => s.run(["auth", "--endpoint", "opencode", "--source", "key", "--key", "oc_sk_live"]));
+  assert.throws(() =>
+    s.run([
+      "auth",
+      "--endpoint",
+      "opencode",
+      "--source",
+      "key",
+      "--key",
+      "oc_sk_live",
+    ]),
+  );
 });

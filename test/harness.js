@@ -8,14 +8,30 @@ export async function loadPlugin(deps = {}, overrides = {}) {
     location: { directory: "/tmp" },
     session: { context: async () => [] },
     tool: {
-      hook: async (name, callback) => { hooks[name] = callback; },
-      transform: async (callback) => { callback({ add: (definition) => { tools[definition.name] = definition; } }); },
+      hook: async (name, callback) => {
+        hooks[name] = callback;
+      },
+      transform: async (callback) => {
+        callback({
+          add: (definition) => {
+            tools[definition.name] = definition;
+          },
+        });
+      },
     },
     command: {
-      transform: async (callback) => { callback({ add: (definition) => { commands[definition.name] = definition; } }); },
+      transform: async (callback) => {
+        callback({
+          add: (definition) => {
+            commands[definition.name] = definition;
+          },
+        });
+      },
     },
     permission: {
-      hook: async (name, callback) => { hooks[name] = callback; },
+      hook: async (name, callback) => {
+        hooks[name] = callback;
+      },
     },
     ...overrides,
   };

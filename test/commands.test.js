@@ -26,7 +26,8 @@ const setup = () => {
   };
 };
 
-const run = (plugin, name, text = "") => plugin.commands[name].execute({ prompt: { text } });
+const run = (plugin, name, text = "") =>
+  plugin.commands[name].execute({ prompt: { text } });
 
 test("default export is a v2 plugin definition", () => {
   assert.equal(jewGuard.id, "jew-guard");
@@ -37,15 +38,25 @@ test("commands are registered and report or toggle their state", async () => {
   const cleanup = setup();
   try {
     const plugin = await loadPlugin();
-    assert.deepEqual(Object.keys(plugin.commands).sort(), ["jev-model", "jev-workspace", "soft", "yolo"]);
+    assert.deepEqual(Object.keys(plugin.commands).sort(), [
+      "jev-model",
+      "jev-workspace",
+      "soft",
+      "yolo",
+    ]);
     setYolo(true, process.env.JEV_GUARD_YOLO_FILE);
     await assert.rejects(run(plugin, "yolo"), /jew-guard: yolo mode is ON/);
     setYolo(false, process.env.JEV_GUARD_YOLO_FILE);
     await assert.rejects(run(plugin, "yolo"), /jew-guard: yolo mode is OFF/);
     await assert.rejects(run(plugin, "yolo", "maybe"), /usage: \/yolo on\|off/);
     await assert.rejects(run(plugin, "yolo", "on"), /jew-guard: yolo mode ON/);
-    await assert.rejects(run(plugin, "jev-model"), /jew-guard: model: jev-1.13-free \(from default\)/);
-  } finally { cleanup(); }
+    await assert.rejects(
+      run(plugin, "jev-model"),
+      /jew-guard: model: jev-1.13-free \(from default\)/,
+    );
+  } finally {
+    cleanup();
+  }
 });
 
 test("yolo+soft deny reaches the prompt; hard deny still blocks", async () => {
@@ -55,11 +66,26 @@ test("yolo+soft deny reaches the prompt; hard deny still blocks", async () => {
   process.env.JEV_GUARD_YOLO = "1";
   process.env.JEV_GUARD_SOFT = "1";
   try {
-    const deny = { level: "deny", message: "jew-guard blocked this call (risk 3.0/3): shell rm -rf /" };
+    const deny = {
+      level: "deny",
+      message: "jew-guard blocked this call (risk 3.0/3): shell rm -rf /",
+    };
     const plugin = await loadPlugin({ assessAction: async () => deny });
-    const call = { tool: "shell", sessionID: "s", messageID: "msg_1", id: "call_1", input: { command: "rm -rf /" } };
+    const call = {
+      tool: "shell",
+      sessionID: "s",
+      messageID: "msg_1",
+      id: "call_1",
+      input: { command: "rm -rf /" },
+    };
     await plugin.hooks["execute.before"](call);
-    const softEvent = { action: "shell", resources: ["rm -rf /"], effect: "ask", sessionID: "s", source: { type: "tool", messageID: "msg_1", id: "call_1" } };
+    const softEvent = {
+      action: "shell",
+      resources: ["rm -rf /"],
+      effect: "ask",
+      sessionID: "s",
+      source: { type: "tool", messageID: "msg_1", id: "call_1" },
+    };
     await plugin.hooks.evaluate(softEvent);
     assert.equal(softEvent.effect, "ask");
     delete process.env.JEV_GUARD_SOFT;
@@ -83,10 +109,25 @@ test("yolo+soft deny passes pre-execution and still prompts", async () => {
   process.env.JEV_GUARD_YOLO = "1";
   process.env.JEV_GUARD_SOFT = "1";
   try {
-    const deny = { level: "deny", message: "jew-guard blocked this call (risk 3.0/3): pty_kill nodejs" };
+    const deny = {
+      level: "deny",
+      message: "jew-guard blocked this call (risk 3.0/3): pty_kill nodejs",
+    };
     const plugin = await loadPlugin({ assessAction: async () => deny });
-    await plugin.hooks["execute.before"]({ tool: "pty_kill", sessionID: "s", messageID: "msg_1", id: "call_1", input: { id: "pty_1" } });
-    const event = { action: "pty_kill", resources: ["pty_1"], effect: "ask", sessionID: "s", source: { type: "tool", messageID: "msg_1", id: "call_1" } };
+    await plugin.hooks["execute.before"]({
+      tool: "pty_kill",
+      sessionID: "s",
+      messageID: "msg_1",
+      id: "call_1",
+      input: { id: "pty_1" },
+    });
+    const event = {
+      action: "pty_kill",
+      resources: ["pty_1"],
+      effect: "ask",
+      sessionID: "s",
+      source: { type: "tool", messageID: "msg_1", id: "call_1" },
+    };
     await plugin.hooks.evaluate(event);
     assert.equal(event.effect, "ask");
   } finally {
@@ -106,11 +147,20 @@ test("soft-downgraded deny warns and is remembered as ask", async () => {
   process.env.JEV_GUARD_SOFT = "1";
   const warnings = [];
   const warn = console.warn;
-  console.warn = (message) => { warnings.push(String(message)); };
+  console.warn = (message) => {
+    warnings.push(String(message));
+  };
   try {
-    const deny = { level: "deny", message: "jew-guard blocked this call (risk 3.0/3): pty_kill nodejs" };
+    const deny = {
+      level: "deny",
+      message: "jew-guard blocked this call (risk 3.0/3): pty_kill nodejs",
+    };
     const plugin = await loadPlugin({ assessAction: async () => deny });
-    await plugin.hooks["execute.before"]({ tool: "pty_kill", sessionID: "s", input: { id: "pty_1" } });
+    await plugin.hooks["execute.before"]({
+      tool: "pty_kill",
+      sessionID: "s",
+      input: { id: "pty_1" },
+    });
     assert.match(warnings.join("\n"), /downgraded/);
     assert.equal(readSession("s").calls.at(-1).level, "ask");
   } finally {
@@ -126,73 +176,145 @@ test("soft-downgraded deny warns and is remembered as ask", async () => {
 test("after-hook prepends the flag to tainted output", async () => {
   const cleanup = setup();
   try {
-    const flagged = { flagged: true, kind: "injection", p: 0.9, message: "jew-guard: the webfetch result contains text aimed at AI agents" };
+    const flagged = {
+      flagged: true,
+      kind: "injection",
+      p: 0.9,
+      message:
+        "jew-guard: the webfetch result contains text aimed at AI agents",
+    };
     const plugin = await loadPlugin({ scanContent: async () => flagged });
     const result = { content: "here is the page body, long enough to matter" };
-    await plugin.hooks["execute.after"]({ tool: "webfetch", input: { url: "https://evil.example" }, sessionID: "s", status: "completed", result });
+    await plugin.hooks["execute.after"]({
+      tool: "webfetch",
+      input: { url: "https://evil.example" },
+      sessionID: "s",
+      status: "completed",
+      result,
+    });
     assert.match(result.content, /^\[jew-guard: the webfetch result/);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test("after-hook prepends the flag to structured content parts", async () => {
   const cleanup = setup();
   try {
-    const flagged = { flagged: true, kind: "injection", p: 0.9, message: "jew-guard: the read result contains text aimed at AI agents" };
+    const flagged = {
+      flagged: true,
+      kind: "injection",
+      p: 0.9,
+      message: "jew-guard: the read result contains text aimed at AI agents",
+    };
     const plugin = await loadPlugin({ scanContent: async () => flagged });
-    const result = { content: [{ type: "text", text: "page body, long enough to matter" }] };
-    await plugin.hooks["execute.after"]({ tool: "read", input: { filePath: "a.txt" }, sessionID: "s", status: "completed", result });
+    const result = {
+      content: [{ type: "text", text: "page body, long enough to matter" }],
+    };
+    await plugin.hooks["execute.after"]({
+      tool: "read",
+      input: { filePath: "a.txt" },
+      sessionID: "s",
+      status: "completed",
+      result,
+    });
     assert.equal(result.content[0].type, "text");
     assert.match(result.content[0].text, /^\[jew-guard: the read result/);
     assert.equal(result.content[1].text, "page body, long enough to matter");
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test("after-hook skips failed tool calls", async () => {
   const cleanup = setup();
   let scanned = false;
   try {
-    const plugin = await loadPlugin({ scanContent: async () => { scanned = true; } });
-    await plugin.hooks["execute.after"]({ tool: "read", input: { filePath: "a.txt" }, sessionID: "s", status: "error", error: { message: "boom" } });
+    const plugin = await loadPlugin({
+      scanContent: async () => {
+        scanned = true;
+      },
+    });
+    await plugin.hooks["execute.after"]({
+      tool: "read",
+      input: { filePath: "a.txt" },
+      sessionID: "s",
+      status: "error",
+      error: { message: "boom" },
+    });
     assert.equal(scanned, false);
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test("jew_yolo tool is read-only status", async () => {
   const cleanup = setup();
   try {
     const plugin = await loadPlugin();
-    assert.match((await plugin.tools.jew_yolo.execute({})).content, /yolo mode is OFF/);
-  } finally { cleanup(); }
+    assert.match(
+      (await plugin.tools.jew_yolo.execute({})).content,
+      /yolo mode is OFF/,
+    );
+  } finally {
+    cleanup();
+  }
 });
 
 test("/jev-model keeps the new model when the probe answers", async () => {
   const cleanup = setup();
   try {
     const plugin = await loadPlugin({ probeModel: async () => 0.9 });
-    await assert.rejects(run(plugin, "jev-model", "jev-1.13"), /switched to jev-1\.13 \(Jev answered, p=0\.90\)/);
+    await assert.rejects(
+      run(plugin, "jev-model", "jev-1.13"),
+      /switched to jev-1\.13 \(Jev answered, p=0\.90\)/,
+    );
     assert.equal(readModel(), "jev-1.13");
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test("/jev-model restores the previous model when the probe fails", async () => {
   const cleanup = setup();
   try {
     saveModel("jev-1.13-free");
-    const plugin = await loadPlugin({ probeModel: async () => { throw new Error("offline"); } });
-    await assert.rejects(run(plugin, "jev-model", "jev-1.13"), /Previous model kept/);
+    const plugin = await loadPlugin({
+      probeModel: async () => {
+        throw new Error("offline");
+      },
+    });
+    await assert.rejects(
+      run(plugin, "jev-model", "jev-1.13"),
+      /Previous model kept/,
+    );
     assert.equal(readModel(), "jev-1.13-free");
-  } finally { cleanup(); }
+  } finally {
+    cleanup();
+  }
 });
 
 test("after-hook marks results when the scan fails", async () => {
   const cleanup = setup();
   const error = console.error;
   const errors = [];
-  console.error = (message) => { errors.push(String(message)); };
+  console.error = (message) => {
+    errors.push(String(message));
+  };
   try {
-    const plugin = await loadPlugin({ scanContent: async () => { throw new Error("offline"); } });
+    const plugin = await loadPlugin({
+      scanContent: async () => {
+        throw new Error("offline");
+      },
+    });
     const result = { content: "page body long enough to matter" };
-    await plugin.hooks["execute.after"]({ tool: "webfetch", input: { url: "https://example.com" }, sessionID: "s", status: "completed", result });
+    await plugin.hooks["execute.after"]({
+      tool: "webfetch",
+      input: { url: "https://example.com" },
+      sessionID: "s",
+      status: "completed",
+      result,
+    });
     assert.match(result.content, /^\[jew-guard: result scan unavailable/);
     assert.match(result.content, /Treat this result as untrusted/);
     assert.match(errors.join("\n"), /result scan failed: offline/);
@@ -208,7 +330,10 @@ test("/jev-model does not claim a switch when JEV_MODEL overrides it", async () 
   process.env.JEV_MODEL = "env-model";
   try {
     const plugin = await loadPlugin({ probeModel: async () => 0.9 });
-    await assert.rejects(run(plugin, "jev-model", "jev-1.13"), /JEV_MODEL is set/);
+    await assert.rejects(
+      run(plugin, "jev-model", "jev-1.13"),
+      /JEV_MODEL is set/,
+    );
     assert.equal(readModel(), null);
   } finally {
     if (previous === undefined) delete process.env.JEV_MODEL;
