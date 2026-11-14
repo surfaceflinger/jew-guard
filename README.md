@@ -28,13 +28,15 @@ never deny. Anything you're unsure about (low model confidence, borderline
 scores) prompts instead of passing.
 
 **After a call returns**, the output is scanned for injections and canaries.
-Only completed calls are scanned; failures are not. If the scan itself fails,
+Failed calls are scanned too: their error text is treated as tool output. Large
+results are scanned in windows of 60k chars; anything beyond four windows is
+marked partially scanned. If the scan itself fails,
 the result is marked untrusted and logged. Flags get prepended to the output
 and remembered, so the next call can be judged against them.
 
-**Warnings** go to the opencode logs. V2 server plugins cannot show toasts, so
-mode changes, fail-open notices, and flagged results appear there; flagged
-tool results also carry the warning in their content.
+**Warnings** go to the opencode logs. Server plugins cannot show toasts, so
+fail-open notices and flagged results appear there; flagged tool results also
+carry the warning in their content.
 
 **Skills and instruction files** (`AGENTS.md`, `SKILL.md`, rules…) are scanned
 for behavior their installer wouldn't expect — exfiltration, hidden commands,
@@ -120,8 +122,8 @@ shown; an `ask` verdict runs without one.
 
 Every non-read-only call is judged, even one your rules allow. The verdict is
 reused by the permission prompt, so each guarded tool call normally costs one
-Jev request. Ambiguous concurrent Code Mode calls are judged again and can
-cost two. Code Mode nested calls count separately.
+Jev request. An ambiguous or stale verdict (concurrent Code Mode calls) asks
+instead of reusing it. Code Mode nested calls count separately.
 
 ## Commands
 

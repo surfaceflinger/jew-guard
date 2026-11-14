@@ -120,6 +120,10 @@ function isLocal(host) {
 export async function ask(state, questions, options = {}) {
   const { env = process.env } = options;
   const resolved = await backend(env);
+  const target =
+    resolved && options.model
+      ? { ...resolved, model: options.model }
+      : resolved;
   const fallback =
     options.fallback === false ||
     env.JEV_GUARD_FAIL_CLOSED ||
@@ -138,7 +142,7 @@ export async function ask(state, questions, options = {}) {
     );
   }
   try {
-    return await request(resolved, state, questions, options);
+    return await request(target, state, questions, options);
   } catch (err) {
     if (!fallback) throw err;
     return request(openRouterBackend(fallback), state, questions, {

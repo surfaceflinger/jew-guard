@@ -276,6 +276,25 @@ test("answer numbers are normalized and missing fields stay missing", async () =
   assert.equal(a.from_untrusted.p, undefined);
 });
 
+test("ask model option overrides the configured model", async () => {
+  let body;
+  const e = withConfig({
+    endpoint: "opencode",
+    url: "https://example.test/v1/systemone",
+    key: "st_test",
+    model: "from-config",
+  });
+  await ask({ q: 1 }, QUESTIONS, {
+    env: e,
+    model: "candidate",
+    fetchImpl: async (url, init) => {
+      body = JSON.parse(init.body);
+      return res(200, ANSWERS);
+    },
+  });
+  assert.equal(body.model, "candidate");
+});
+
 test("JEV_MODEL env wins over the config.json model", async () => {
   let body;
   const e = withConfig(

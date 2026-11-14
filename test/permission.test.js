@@ -190,25 +190,40 @@ test("external_directory checks do not consume the tool verdict", async () => {
   }
 });
 
-test("ambiguous verdicts are re-judged instead of reused", async () => {
+test("ambiguous verdicts prompt instead of being re-judged", async () => {
   let judged = 0;
   const { cleanup } = setup();
   try {
     const plugin = await loadPlugin({
       assessAction: async () => {
         judged += 1;
-        return judged <= 2
-          ? { level: "allow", message: "cached" }
-          : { level: "deny", message: "fallback" };
+        return { level: "allow", message: "cached" };
       },
     });
     await plugin.hooks["execute.before"](call);
     await plugin.hooks["execute.before"](call);
     const event = askEvent();
     await plugin.hooks.evaluate(event);
-    assert.equal(event.effect, "deny");
-    assert.equal(event.message, "fallback");
-    assert.equal(judged, 3);
+    assert.equal(event.effect, "ask");
+    assert.match(event.message, /ambiguous/);
+    assert.equal(judged, 2);
+  } finally {
+    cleanup();
+  }
+});
+
+test("yolo does not auto-approve an ambiguous verdict", async () => {
+  const { yoloFile, cleanup } = setup();
+  try {
+    setYolo(true, yoloFile);
+    const plugin = await loadPlugin({
+      assessAction: async () => ({ level: "allow", message: "ok" }),
+    });
+    await plugin.hooks["execute.before"](call);
+    await plugin.hooks["execute.before"](call);
+    const event = askEvent();
+    await plugin.hooks.evaluate(event);
+    assert.equal(event.effect, "ask");
   } finally {
     cleanup();
   }

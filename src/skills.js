@@ -41,17 +41,18 @@ export async function scanInstructionsCached({ text, source }, options = {}) {
     };
   }
   const fresh = await scanInstructions({ text, source }, options);
-  writeCache({
-    ...readCache(),
-    [cacheKey]: {
-      v: CACHE_VERSION,
-      kind: fresh.kind,
-      p: fresh.p,
-      probs: fresh.probs,
-      conf: fresh.confidence,
-      at: Date.now(),
-    },
-  });
+  if (!fresh.partial)
+    writeCache({
+      ...readCache(),
+      [cacheKey]: {
+        v: CACHE_VERSION,
+        kind: fresh.kind,
+        p: fresh.p,
+        probs: fresh.probs,
+        conf: fresh.confidence,
+        at: Date.now(),
+      },
+    });
   return { ...fresh, cached: false };
 }
 

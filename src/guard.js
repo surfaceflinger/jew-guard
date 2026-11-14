@@ -337,17 +337,21 @@ export async function assessAction(
   )
     return null;
   const limits = thresholds(env);
+  const stateInput = truncate(JSON.stringify(input ?? null));
   let cacheKey;
   if (!options.fetchImpl) {
-    cacheKey = verdictKey({ tool, input, cwd, agent, context }, limits);
+    cacheKey = verdictKey(
+      { tool, input: stateInput, cwd, agent, context },
+      limits,
+    );
     const cached = verdictCache.get(cacheKey);
     if (cached && Date.now() - cached.at < VERDICT_TTL_MS)
       return cached.verdict;
   }
   const answers = await ask(
     context
-      ? { agent, tool, input, cwd, context }
-      : { agent, tool, input, cwd },
+      ? { agent, tool, input: stateInput, cwd, context }
+      : { agent, tool, input: stateInput, cwd },
     ACTION_QUESTIONS,
     options,
   );
@@ -435,6 +439,29 @@ export function shouldScan(text) {
   );
 }
 
+const MAX_SCAN_CHUNKS = 4;
+
+function scanChunks(text) {
+  const size = MAX_STATE_CHARS;
+  if (Math.ceil(text.length / size) <= MAX_SCAN_CHUNKS) {
+    const chunks = [];
+    for (let start = 0; start < text.length; start += size)
+      chunks.push(text.slice(start, start + size));
+    return { chunks, partial: false };
+  }
+  const starts = [0, size, 2 * size, text.length - size];
+  return {
+    chunks: starts.map((start) => text.slice(start, start + size)),
+    partial: true,
+  };
+}
+
+const worseVerdict = (first, second) =>
+  (second.flagged && !first.flagged) ||
+  (second.flagged === first.flagged && second.p > first.p)
+    ? second
+    : first;
+
 export async function scanContent({ text, tool, source }, options = {}) {
   const env = options.env ?? process.env;
   const toolName = String(tool ?? "").toLowerCase();
@@ -444,13 +471,27 @@ export async function scanContent({ text, tool, source }, options = {}) {
   )
     return null;
   if (!shouldScan(text)) return null;
-  const answers = await ask(
-    { source: source ?? tool, content: truncate(text) },
-    SCAN_QUESTIONS,
-    options,
+  const limits = thresholds(env);
+  const { chunks, partial } = scanChunks(text);
+  const answers = await Promise.all(
+    chunks.map((content) =>
+      ask({ source: source ?? tool, content }, SCAN_QUESTIONS, options),
+    ),
   );
-  return verdictContent(answers, tool, source, thresholds(env));
+  const verdict = answers
+    .map((answer) => verdictContent(answer, tool, source, limits))
+    .reduce(worseVerdict);
+  return partial
+    ? {
+        ...verdict,
+        partial: true,
+        message: `${verdict.message} ${partialNote(text)}`,
+      }
+    : verdict;
 }
+
+const partialNote = (text) =>
+  `Only ${MAX_STATE_CHARS * MAX_SCAN_CHUNKS} of ${text.length} chars were scanned; treat the rest as untrusted.`;
 
 export function judgeInstructions(kind, probability, limits = thresholds()) {
   if (!finiteNumber(probability) || kind === "unknown") return true;
@@ -511,12 +552,23 @@ export function verdictInstructions(answers, source, limits = thresholds()) {
 export async function scanInstructions({ text, source }, options = {}) {
   const env = options.env ?? process.env;
   if (!shouldScan(text)) return null;
-  const answers = await ask(
-    { source, content: truncate(text) },
-    INSTRUCTION_QUESTIONS,
-    options,
+  const limits = thresholds(env);
+  const { chunks, partial } = scanChunks(text);
+  const answers = await Promise.all(
+    chunks.map((content) =>
+      ask({ source, content }, INSTRUCTION_QUESTIONS, options),
+    ),
   );
-  return verdictInstructions(answers, source, thresholds(env));
+  const verdict = answers
+    .map((answer) => verdictInstructions(answer, source, limits))
+    .reduce(worseVerdict);
+  return partial
+    ? {
+        ...verdict,
+        partial: true,
+        message: `${verdict.message} ${partialNote(text)}`,
+      }
+    : verdict;
 }
 
 export const INSTRUCTION_FILE =
