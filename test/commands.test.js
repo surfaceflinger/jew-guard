@@ -13,16 +13,12 @@ const tmp = () => mkdtempSync(join(tmpdir(), "jew-"));
 const setup = () => {
   const dir = tmp();
   process.env.JEV_GUARD_YOLO_FILE = join(dir, "yolo.json");
-  process.env.JEV_GUARD_MODEL_FILE = join(dir, "model.json");
-  process.env.JEV_GUARD_WORKSPACE_FILE = join(dir, "workspace.json");
   process.env.JEV_GUARD_CONFIG_FILE = join(dir, "config.json");
   process.env.JEV_GUARD_SESSIONS = join(dir, "sessions");
   const previousData = process.env.XDG_DATA_HOME;
   process.env.XDG_DATA_HOME = join(dir, "data");
   return () => {
     delete process.env.JEV_GUARD_YOLO_FILE;
-    delete process.env.JEV_GUARD_MODEL_FILE;
-    delete process.env.JEV_GUARD_WORKSPACE_FILE;
     delete process.env.JEV_GUARD_CONFIG_FILE;
     delete process.env.JEV_GUARD_SESSIONS;
     if (previousData === undefined) delete process.env.XDG_DATA_HOME;

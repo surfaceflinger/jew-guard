@@ -23,8 +23,6 @@ import urllib.request
 HOME = os.path.expanduser("~")
 CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config"), "jew-guard")
 CONFIG_FILE = os.environ.get("JEV_GUARD_CONFIG_FILE") or os.path.join(CONFIG_DIR, "config.json")
-LEGACY_MODEL = os.environ.get("JEV_GUARD_MODEL_FILE") or os.path.join(CONFIG_DIR, "model.json")
-LEGACY_WORKSPACE = os.environ.get("JEV_GUARD_WORKSPACE_FILE") or os.path.join(CONFIG_DIR, "workspace.json")
 OPENCODE_DATA = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"), "opencode")
 CONSOLE_ORGS = "https://opencode.ai/console/api/orgs"
 
@@ -165,9 +163,8 @@ def db_credentials():
 
 
 def auth_providers():
-    """opencode v2 keeps provider keys in opencode.db; auth.json is only the legacy fallback."""
-    legacy = read_json(os.path.join(OPENCODE_DATA, "auth.json"), {}) or {}
-    return {**legacy, **db_credentials()}
+    """Provider keys from opencode.db."""
+    return db_credentials()
 
 
 def env_token():
@@ -201,9 +198,6 @@ def effective_model(cfg):
         return os.environ["JEV_MODEL"], "JEV_MODEL"
     if cfg.get("model"):
         return cfg["model"], "config"
-    saved = (read_json(LEGACY_MODEL, {}) or {}).get("model")
-    if saved:
-        return saved, "legacy model.json"
     return None, None
 
 
@@ -221,7 +215,7 @@ def resolve_workspace(token, want, org_hint):
             return {"id": want, "name": want}
         known = ", ".join(o["name"] for o in orgs) if orgs else "cannot list (no token)"
         sys.exit(f"jew-guard: unknown workspace \"{want}\" ({known})")
-    for hint in (org_hint, (read_json(LEGACY_WORKSPACE, {}) or {}).get("id")):
+    for hint in (org_hint,):
         if not hint:
             continue
         hit = match(hint)
@@ -264,10 +258,10 @@ def cmd_auth(args):
             has_go = "opencode-go" in auth_providers()
             options = [("env", "env         OPENCODE_CONSOLE_TOKEN (opencode session injects it)"),
                        ("db", "db          opencode.db Console account (current /connect login)"),
-                       ("auth", "auth        provider key (opencode.db or auth.json)")]
+                       ("auth", "auth        provider key (opencode.db)")]
             source = choose("Credential", options, 2 if has_go else (0 if env_token()[0] else 1))
         else:
-            options = [("auth", "auth        provider key (opencode.db or auth.json)")] + ([("env", "env         OPENROUTER_API_KEY")] if os.environ.get("OPENROUTER_API_KEY") else [])
+            options = [("auth", "auth        provider key (opencode.db)")] + ([("env", "env         OPENROUTER_API_KEY")] if os.environ.get("OPENROUTER_API_KEY") else [])
             source = choose("Credential", options, 0 if endpoint == "openrouter" and "openrouter" in auth_providers() else len(options) - 1)
 
     entry = {"endpoint": endpoint, "url": url}
@@ -290,7 +284,7 @@ def cmd_auth(args):
             provider = choose("Provider", [(p, p) for p in providers])
         token = (auth_providers().get(provider) or {}).get("key")
         if not token:
-            sys.exit(f"jew-guard: no key for provider \"{provider}\" in opencode.db or auth.json")
+            sys.exit(f"jew-guard: no key for provider \"{provider}\" in opencode.db")
         entry["keyProvider"] = provider
     elif source == "db":
         token, db_org = db_console()
@@ -380,7 +374,7 @@ def main():
     p_auth.add_argument("--url", help="override the endpoint URL")
     p_auth.add_argument("--source", choices=["env", "db", "auth"], help="where the credential comes from (never stored: config holds a reference, not the key)")
     p_auth.add_argument("--key-env", help="env var name for --source env")
-    p_auth.add_argument("--provider", help="provider key in opencode.db or auth.json for --source auth")
+    p_auth.add_argument("--provider", help="provider key in opencode.db for --source auth")
     p_auth.add_argument("--workspace", help="Console workspace name or id (opencode endpoint)")
     p_auth.add_argument("--model", help="model id to save (default: endpoint default)")
     p_auth.set_defaults(func=cmd_auth)

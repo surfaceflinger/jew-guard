@@ -1,22 +1,11 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { readConfig, updateConfig } from "./config.js";
-import { configDir } from "./paths.js";
 
-const legacyFile = (env = process.env) =>
-  env.JEV_GUARD_MODEL_FILE ?? join(configDir(env), "model.json");
 const trimmedOrNull = (model) =>
   typeof model === "string" && model.trim() ? model.trim() : null;
 
 function savedModel(env = process.env) {
   const configured = trimmedOrNull(readConfig(env)?.model);
-  if (configured) return { model: configured, source: "config" };
-  try {
-    const saved = JSON.parse(readFileSync(legacyFile(env), "utf8"));
-    const model = trimmedOrNull(saved?.model);
-    if (model) return { model, source: "saved pick" };
-  } catch {}
-  return null;
+  return configured ? { model: configured, source: "config" } : null;
 }
 
 export function readModel(env = process.env) {

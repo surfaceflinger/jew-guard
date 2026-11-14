@@ -31,6 +31,18 @@ const withConfig = (config, extra = {}) => {
   return env({ JEV_GUARD_CONFIG_FILE: join(dir, "config.json"), ...extra });
 };
 
+function seedDb(dir, provider, key) {
+  mkdirSync(join(dir, "opencode"), { recursive: true });
+  const db = new sqlite.DatabaseSync(join(dir, "opencode", "opencode.db"));
+  db.exec(
+    "create table credential (id text primary key, integration_id text, label text not null, value text not null, active integer)",
+  );
+  db.prepare(
+    "insert into credential (id, integration_id, label, value, active) values (?, ?, ?, ?, 1)",
+  ).run("c1", provider, provider, JSON.stringify({ type: "key", key }));
+  db.close();
+}
+
 const QUESTIONS = { risk: { type: "score" }, approval: { type: "noul" } };
 const ANSWERS = {
   answers: {
@@ -39,7 +51,7 @@ const ANSWERS = {
   },
 };
 
-test("backend falls back to the opencode-go service key in auth.json", async () => {
+test("backend ignores auth.json", async () => {
   const dir = tmp();
   mkdirSync(join(dir, "opencode"), { recursive: true });
   writeFileSync(
@@ -48,33 +60,15 @@ test("backend falls back to the opencode-go service key in auth.json", async () 
       "opencode-go": { type: "api", key: "oc_sk_test" },
     }),
   );
-  const b = await backend(env({ XDG_DATA_HOME: dir }));
-  assert.deepEqual(b, { kind: "console", key: "oc_sk_test", orgId: null });
+  assert.equal(await backend(env({ XDG_DATA_HOME: dir })), null);
 });
 
 test(
-  "backend reads the service key from opencode.db, ahead of a stale auth.json",
+  "backend reads the service key from opencode.db",
   { skip: !sqlite && "node:sqlite unavailable" },
   async () => {
     const dir = tmp();
-    mkdirSync(join(dir, "opencode"), { recursive: true });
-    writeFileSync(
-      join(dir, "opencode", "auth.json"),
-      JSON.stringify({ "opencode-go": { type: "api", key: "oc_sk_stale" } }),
-    );
-    const db = new sqlite.DatabaseSync(join(dir, "opencode", "opencode.db"));
-    db.exec(
-      "create table credential (id text primary key, integration_id text, label text not null, value text not null, active integer)",
-    );
-    db.prepare(
-      "insert into credential (id, integration_id, label, value, active) values (?, ?, ?, ?, 1)",
-    ).run(
-      "c1",
-      "opencode-go",
-      "OpenCode Go",
-      JSON.stringify({ type: "key", key: "oc_sk_db" }),
-    );
-    db.close();
+    seedDb(dir, "opencode-go", "oc_sk_db");
     assert.deepEqual(await backend(env({ XDG_DATA_HOME: dir })), {
       kind: "console",
       key: "oc_sk_db",
@@ -114,30 +108,30 @@ test("config url must be https or local http", async () => {
   );
 });
 
-test("backend from config.json: auth.json provider", async () => {
-  const dir = tmp();
-  mkdirSync(join(dir, "opencode"), { recursive: true });
-  writeFileSync(
-    join(dir, "opencode", "auth.json"),
-    JSON.stringify({ openrouter: { type: "api", key: "sk-or-test" } }),
-  );
-  const b = await backend(
-    withConfig(
-      {
-        endpoint: "openrouter",
-        url: OPENROUTER_URL,
-        keyProvider: "openrouter",
-      },
-      { XDG_DATA_HOME: dir },
-    ),
-  );
-  assert.deepEqual(b, {
-    kind: "openrouter",
-    key: "sk-or-test",
-    url: OPENROUTER_URL,
-    orgId: null,
-  });
-});
+test(
+  "backend from config.json: opencode.db provider",
+  { skip: !sqlite && "node:sqlite unavailable" },
+  async () => {
+    const dir = tmp();
+    seedDb(dir, "openrouter", "sk-or-test");
+    const b = await backend(
+      withConfig(
+        {
+          endpoint: "openrouter",
+          url: OPENROUTER_URL,
+          keyProvider: "openrouter",
+        },
+        { XDG_DATA_HOME: dir },
+      ),
+    );
+    assert.deepEqual(b, {
+      kind: "openrouter",
+      key: "sk-or-test",
+      url: OPENROUTER_URL,
+      orgId: null,
+    });
+  },
+);
 
 test("backend from config.json: missing credential throws with a pointer", async () => {
   await assert.rejects(

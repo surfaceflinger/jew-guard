@@ -3,34 +3,26 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { effectiveModel, readModel, saveModel } from "../src/model.js";
+import {
+  deleteModel,
+  effectiveModel,
+  readModel,
+  saveModel,
+} from "../src/model.js";
 
-function isolate({ config, legacy } = {}) {
+function isolate({ config } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "jew-"));
-  const prev = {
-    c: process.env.JEV_GUARD_CONFIG_FILE,
-    m: process.env.JEV_GUARD_MODEL_FILE,
-  };
+  const previous = process.env.JEV_GUARD_CONFIG_FILE;
   process.env.JEV_GUARD_CONFIG_FILE = join(dir, "config.json");
-  process.env.JEV_GUARD_MODEL_FILE = join(dir, "model.json");
-  if (config)
+  if (config) {
     writeFileSync(process.env.JEV_GUARD_CONFIG_FILE, JSON.stringify(config));
-  if (legacy)
-    writeFileSync(process.env.JEV_GUARD_MODEL_FILE, JSON.stringify(legacy));
+  }
   return {
     path: process.env.JEV_GUARD_CONFIG_FILE,
-    env: {
-      JEV_GUARD_CONFIG_FILE: process.env.JEV_GUARD_CONFIG_FILE,
-      JEV_GUARD_MODEL_FILE: process.env.JEV_GUARD_MODEL_FILE,
-    },
+    env: { JEV_GUARD_CONFIG_FILE: process.env.JEV_GUARD_CONFIG_FILE },
     restore() {
-      for (const [k, v] of [
-        ["JEV_GUARD_CONFIG_FILE", prev.c],
-        ["JEV_GUARD_MODEL_FILE", prev.m],
-      ]) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-      }
+      if (previous === undefined) delete process.env.JEV_GUARD_CONFIG_FILE;
+      else process.env.JEV_GUARD_CONFIG_FILE = previous;
     },
   };
 }
@@ -47,11 +39,8 @@ test("save writes config.json; read reads it back", () => {
   }
 });
 
-test("effective model: env > config > legacy > default", () => {
-  const iso = isolate({
-    config: { model: "from-config" },
-    legacy: { model: "from-legacy" },
-  });
+test("effective model: env > config > default", () => {
+  const iso = isolate({ config: { model: "from-config" } });
   try {
     assert.deepEqual(
       effectiveModel({ ...iso.env, JEV_MODEL: "custom-x" }, "console"),
@@ -67,15 +56,6 @@ test("effective model: env > config > legacy > default", () => {
     });
   } finally {
     iso.restore();
-  }
-  const legacyOnly = isolate({ legacy: { model: "from-legacy" } });
-  try {
-    assert.deepEqual(effectiveModel(legacyOnly.env, "console"), {
-      model: "from-legacy",
-      source: "saved pick",
-    });
-  } finally {
-    legacyOnly.restore();
   }
   const empty = isolate();
   try {
@@ -96,10 +76,9 @@ test("effective model: env > config > legacy > default", () => {
   }
 });
 
-test("clearing the last setting removes config.json", async () => {
+test("clearing the last setting removes config.json", () => {
   const iso = isolate({ config: { model: "x" } });
   try {
-    const { deleteModel } = await import("../src/model.js");
     deleteModel();
     assert.equal(existsSync(iso.path), false);
   } finally {
@@ -107,19 +86,16 @@ test("clearing the last setting removes config.json", async () => {
   }
 });
 
-test("deleteModel removes the pick and keeps the rest of config.json", async () => {
+test("deleteModel removes the pick and keeps the rest of config.json", () => {
   const iso = isolate({
     config: { endpoint: "openrouter", model: "inception/mercury-decide:free" },
-    legacy: { model: "from-legacy" },
   });
   try {
-    const { deleteModel } = await import("../src/model.js");
     deleteModel();
-    assert.equal(readModel(), "from-legacy");
+    assert.equal(readModel(), null);
     const config = JSON.parse(readFileSync(iso.path, "utf8"));
     assert.equal(config.model, undefined);
     assert.equal(config.endpoint, "openrouter");
-    deleteModel();
   } finally {
     iso.restore();
   }

@@ -95,12 +95,12 @@ test("soft flag roundtrip", async () => {
   }
 });
 
-test("readModes understands legacy and current formats", async () => {
+test("readModes ignores unknown keys", async () => {
   const { readModes } = await import("../src/yolo.js");
   const { writeFileSync } = await import("node:fs");
   const f = file();
   writeFileSync(f, JSON.stringify({ on: true }));
-  assert.deepEqual([readModes(f).yolo, readModes(f).soft], [true, false]);
+  assert.deepEqual([readModes(f).yolo, readModes(f).soft], [false, false]);
   writeFileSync(f, JSON.stringify({ yolo: false, soft: true }));
   assert.deepEqual([readModes(f).yolo, readModes(f).soft], [false, true]);
 });

@@ -72,7 +72,7 @@ function backendFromConfig(config, env) {
       : config.key;
   if (!key)
     throw new Error(
-      `jew-guard config: ${config.keyEnv ? `env ${config.keyEnv} is not set` : `no credential for provider "${config.keyProvider}" in auth.json or opencode.db`}; run jew-guard auth`,
+      `jew-guard config: ${config.keyEnv ? `env ${config.keyEnv} is not set` : `no credential for provider "${config.keyProvider}" in opencode.db`}; run jew-guard auth`,
     );
   return { kind, key, url, orgId: config.org ?? null };
 }

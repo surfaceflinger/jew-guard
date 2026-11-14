@@ -27,6 +27,23 @@ function sandbox() {
   };
 }
 
+function seedDb(s, provider, key) {
+  mkdirSync(join(s.data, "opencode"), { recursive: true });
+  execFileSync("python3", [
+    "-c",
+    `
+import json, sqlite3, sys
+con = sqlite3.connect(sys.argv[1])
+con.execute("create table credential (id text primary key, integration_id text, label text not null, value text not null, active integer)")
+con.execute("insert into credential values ('c1', ?, ?, ?, 1)", (sys.argv[2], sys.argv[2], json.dumps({"type": "key", "key": sys.argv[3]})))
+con.commit()
+`,
+    join(s.data, "opencode", "opencode.db"),
+    provider,
+    key,
+  ]);
+}
+
 test("model set writes config.json", () => {
   const s = sandbox();
   s.run(["model", "set", "jev-1.13"]);
@@ -35,36 +52,12 @@ test("model set writes config.json", () => {
 
 test("auth stores the provider reference, never the key", () => {
   const s = sandbox();
-  mkdirSync(join(s.data, "opencode"), { recursive: true });
-  writeFileSync(
-    join(s.data, "opencode", "auth.json"),
-    JSON.stringify({ openrouter: { type: "api", key: "sk-or-secret" } }),
-  );
+  seedDb(s, "openrouter", "sk-or-secret");
   s.run(["auth", "--endpoint", "openrouter", "--source", "auth"]);
   const config = readFileSync(s.config, "utf8");
   assert.equal(JSON.parse(config).keyProvider, "openrouter");
   assert.equal(JSON.parse(config).model, "inception/mercury-decide:free");
   assert.ok(!config.includes("sk-or-secret"));
-});
-
-test("auth reads the provider key from opencode.db when auth.json is gone", () => {
-  const s = sandbox();
-  mkdirSync(join(s.data, "opencode"), { recursive: true });
-  execFileSync("python3", [
-    "-c",
-    `
-import json, sqlite3, sys
-con = sqlite3.connect(sys.argv[1])
-con.execute("create table credential (id text primary key, integration_id text, label text not null, value text not null, active integer)")
-con.execute("insert into credential values ('c1', 'openrouter', 'OpenRouter', ?, 1)", (json.dumps({"type": "key", "key": "sk-or-db"}),))
-con.commit()
-`,
-    join(s.data, "opencode", "opencode.db"),
-  ]);
-  s.run(["auth", "--endpoint", "openrouter", "--source", "auth"]);
-  const config = readFileSync(s.config, "utf8");
-  assert.equal(JSON.parse(config).keyProvider, "openrouter");
-  assert.ok(!config.includes("sk-or-db"));
 });
 
 test("invalid config.json is refused, not overwritten", () => {

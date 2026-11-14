@@ -1,14 +1,8 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { consoleToken } from "./auth.js";
 import { readConfig, updateConfig } from "./config.js";
-import { configDir } from "./paths.js";
 
 const CONSOLE_ORGS_URL = "https://opencode.ai/console/api/orgs";
 const CONSOLE_CONFIG_URL = "https://opencode.ai/console/api/v2/config";
-
-const legacyFile = () =>
-  process.env.JEV_GUARD_WORKSPACE_FILE ?? join(configDir(), "workspace.json");
 
 export { consoleToken };
 
@@ -38,11 +32,6 @@ export function readSelection() {
   const config = readConfig();
   if (typeof config?.org === "string" && config.org)
     return { id: config.org, name: String(config.orgName ?? config.org) };
-  try {
-    const saved = JSON.parse(readFileSync(legacyFile(), "utf8"));
-    if (saved && typeof saved.id === "string" && saved.id)
-      return { id: saved.id, name: String(saved.name ?? saved.id) };
-  } catch {}
   return null;
 }
 

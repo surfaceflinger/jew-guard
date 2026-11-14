@@ -160,8 +160,7 @@ only surface as a command error.
 | `OPENROUTER_API_KEY` | unset | fallback judge when Jev fails (free tier trains on prompts) |
 
 Out-of-range numbers fall back to defaults. The skip lists use V2 action
-names (`shell`, not `bash`). Old `model.json` / `workspace.json` picks still
-work as fallbacks. `bin/jew-guard` writes static config for
+names (`shell`, not `bash`). `bin/jew-guard` writes static config for
 multi-workspace or OpenRouter-only setups — `jew-guard auth` walks you through it.
 
 ## Privacy

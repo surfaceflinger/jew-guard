@@ -12,8 +12,6 @@ const ENV = [
   "JEV_GUARD_SESSIONS",
   "JEV_GUARD_YOLO_FILE",
   "JEV_GUARD_CONFIG_FILE",
-  "JEV_GUARD_MODEL_FILE",
-  "JEV_GUARD_WORKSPACE_FILE",
 ];
 
 async function decide({

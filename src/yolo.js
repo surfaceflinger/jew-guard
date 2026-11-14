@@ -9,7 +9,7 @@ export function readModes(file = modeFile()) {
   try {
     const saved = JSON.parse(readFileSync(file, "utf8"));
     return {
-      yolo: !!saved.yolo || !!saved.on,
+      yolo: !!saved.yolo,
       soft: !!saved.soft,
       at: saved.at ?? null,
     };
