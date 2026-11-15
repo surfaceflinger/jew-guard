@@ -80,7 +80,7 @@ export default Plugin.define({
         {
           id: "jew-guard.model",
           title: "Show or switch the jew-guard model",
-          slash: { name: "jev-model", arguments: true },
+          slash: { name: "jew-model", arguments: true },
           run: (input) =>
             input
               ? attempt(context, () => guard.model({ text: input }))
@@ -89,7 +89,7 @@ export default Plugin.define({
         {
           id: "jew-guard.workspace",
           title: "Show or pick the jew-guard billing workspace",
-          slash: { name: "jev-workspace", arguments: true },
+          slash: { name: "jew-workspace", arguments: true },
           run: (input) =>
             input
               ? attempt(context, () => guard.workspace({ text: input }))

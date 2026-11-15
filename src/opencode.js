@@ -9,7 +9,7 @@ import {
 import { scanInstructionsCached } from "./skills.js";
 import { buildContext, messagesFrom } from "./context.js";
 import { remember } from "./session.js";
-import { ask } from "./jev.js";
+import { ask } from "./decision.js";
 import {
   consoleToken,
   listWorkspaces,
@@ -30,8 +30,8 @@ import {
 } from "./yolo.js";
 import { JewGuardRpc } from "./rpc.js";
 
-const WORKSPACE_COMMAND = "jev-workspace";
-const MODEL_COMMAND = "jev-model";
+const WORKSPACE_COMMAND = "jew-workspace";
+const MODEL_COMMAND = "jew-model";
 const YOLO_COMMAND = "yolo";
 const SOFT_COMMAND = "soft";
 
@@ -141,7 +141,7 @@ export function createJewGuard(deps = {}) {
           `[jew-guard] ${message}`,
         );
       const failOpen = (err) => {
-        if (process.env.JEV_GUARD_FAIL_CLOSED) {
+        if (process.env.JEW_GUARD_FAIL_CLOSED) {
           notify(`jew-guard unavailable, blocking: ${err.message}`, "error");
           throw new Error(`jew-guard unavailable: ${err.message}`);
         }
@@ -173,7 +173,7 @@ export function createJewGuard(deps = {}) {
           message:
             `${label} mode ${want === "on" ? "ON" : "OFF"}.` +
             (softCommand && want === "on"
-              ? " With yolo on, Jev denies now prompt instead of blocking."
+              ? " With yolo on, model denies become prompts instead of blocks."
               : ""),
           variant: "success",
         };
@@ -198,7 +198,7 @@ export function createJewGuard(deps = {}) {
                 .join("\n") +
               (status.selected
                 ? ""
-                : "\nRe-run as /jev-workspace <name> to pick."),
+                : "\nRe-run as /jew-workspace <name> to pick."),
             variant: "info",
           };
         const match = matchWorkspace(status.spaces, arg);
@@ -214,7 +214,7 @@ export function createJewGuard(deps = {}) {
           };
         saveSelection(match);
         return {
-          message: `Jev calls will bill to "${match.name}". Saved.`,
+          message: `Decision calls will bill to "${match.name}". Saved.`,
           variant: "success",
         };
       };
@@ -223,8 +223,8 @@ export function createJewGuard(deps = {}) {
         if (!arg)
           return {
             message: current
-              ? `model: ${current.model} (from ${current.source}). Re-run as /jev-model <id> to switch.`
-              : "no model configured. Run /jev-model to pick one.",
+              ? `model: ${current.model} (from ${current.source}). Re-run as /jew-model <id> to switch.`
+              : "no model configured. Run /jew-model to pick one.",
             variant: "info",
           };
         let probability;
@@ -310,7 +310,7 @@ export function createJewGuard(deps = {}) {
           });
         add(
           WORKSPACE_COMMAND,
-          "Pick the Console workspace jew-guard bills Jev calls to",
+          "Pick the Console workspace jew-guard bills decision calls to",
           pickWorkspace,
         );
         add(
@@ -320,12 +320,12 @@ export function createJewGuard(deps = {}) {
         );
         add(
           YOLO_COMMAND,
-          "Toggle yolo mode: auto-approve calls Jev confidently allows",
+          "Toggle yolo mode: auto-approve calls the model confidently allows",
           (arg) => toggleMode(YOLO_COMMAND, arg),
         );
         add(
           SOFT_COMMAND,
-          "Toggle soft mode: with yolo, Jev denies become approval prompts instead of blocks",
+          "Toggle soft mode: with yolo, model denies become approval prompts instead of blocks",
           (arg) => toggleMode(SOFT_COMMAND, arg),
         );
       });
@@ -477,7 +477,7 @@ export function createJewGuard(deps = {}) {
         editor.add({
           name: "jew_workspace",
           description:
-            "Read-only: list Console workspaces and show which one jew-guard bills Jev calls to. Changing it requires the human command /jev-workspace.",
+            "Read-only: list Console workspaces and show which one jew-guard bills decision calls to. Changing it requires the human command /jew-workspace.",
           input: {
             type: "object",
             properties: {
@@ -514,7 +514,7 @@ export function createJewGuard(deps = {}) {
                 ...lines,
                 status.selected
                   ? `Current selection: ${status.selected.name}.`
-                  : "No workspace selected yet — the human picks one with /jev-workspace.",
+                  : "No workspace selected yet — the human picks one with /jew-workspace.",
               ].join("\n"),
             };
           },
@@ -523,7 +523,7 @@ export function createJewGuard(deps = {}) {
         editor.add({
           name: "jew_model",
           description:
-            "Read-only: show the model jew-guard queries, or test it. Changing it requires the human command /jev-model.",
+            "Read-only: show the model jew-guard queries, or test it. Changing it requires the human command /jew-model.",
           input: {
             type: "object",
             properties: {
@@ -540,7 +540,7 @@ export function createJewGuard(deps = {}) {
             const current = effectiveModel(process.env);
             if (!current) {
               return {
-                content: "No guard model configured. Pick one with /jev-model.",
+                content: "No guard model configured. Pick one with /jew-model.",
               };
             }
             if (action === "test") {

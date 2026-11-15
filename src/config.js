@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 export const configFile = (env = process.env) =>
-  env.JEV_GUARD_CONFIG_FILE ??
+  env.JEW_GUARD_CONFIG_FILE ??
   join(
     env.XDG_CONFIG_HOME || join(homedir(), ".config"),
     "jew-guard",

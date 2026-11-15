@@ -82,8 +82,8 @@ function load(overrides = {}, selection = "wrk_2") {
 test("tui part registers the four slash commands", () => {
   const { commands } = load();
   assert.deepEqual(commands.map((entry) => entry.slash.name).sort(), [
-    "jev-model",
-    "jev-workspace",
+    "jew-model",
+    "jew-workspace",
     "soft",
     "yolo",
   ]);
@@ -95,13 +95,13 @@ test("tui slash commands call the rpc and toast the result", async () => {
   assert.deepEqual(calls.at(-1), ["yolo", { text: "on" }]);
   assert.equal(toasts.at(-1).message, "yolo ON");
   assert.equal(toasts.at(-1).variant, "success");
-  await command(commands, "jev-model").run("direct-model");
+  await command(commands, "jew-model").run("direct-model");
   assert.deepEqual(calls.at(-1), ["model", { text: "direct-model" }]);
 });
 
 test("bare jew-model opens the decision catalog picker", async () => {
   const { calls, dialogs, commands } = load({}, "vendor/model-a");
-  await command(commands, "jev-model").run("");
+  await command(commands, "jew-model").run("");
   assert.equal(dialogs[0].options[0].value, "vendor/model-a");
   assert.equal(dialogs[0].options[0].category, "typesafe");
   assert.deepEqual(calls.at(-1), ["model", { text: "vendor/model-a" }]);
@@ -114,22 +114,22 @@ test("a single workspace is saved without a picker", async () => {
       items: [{ id: "wrk_1", name: "one" }],
     }),
   });
-  await command(commands, "jev-workspace").run("");
+  await command(commands, "jew-workspace").run("");
   assert.equal(dialogs.length, 0);
   assert.deepEqual(calls.at(-1), ["workspace", { text: "wrk_1" }]);
 });
 
 test("bare jew-workspace opens a picker and saves the choice", async () => {
   const { calls, toasts, dialogs, commands } = load();
-  await command(commands, "jev-workspace").run("");
+  await command(commands, "jew-workspace").run("");
   assert.equal(dialogs[0].options.length, 2);
   assert.deepEqual(calls.at(-1), ["workspace", { text: "wrk_2" }]);
   assert.equal(toasts.at(-1).message, "saved");
 });
 
-test("jev-workspace with an argument skips the picker", async () => {
+test("jew-workspace with an argument skips the picker", async () => {
   const { calls, dialogs, commands } = load();
-  await command(commands, "jev-workspace").run("two");
+  await command(commands, "jew-workspace").run("two");
   assert.equal(dialogs.length, 0);
   assert.deepEqual(calls.at(-1), ["workspace", { text: "two" }]);
 });

@@ -12,15 +12,15 @@ import { setYolo } from "../src/yolo.js";
 const tmp = () => mkdtempSync(join(tmpdir(), "jew-"));
 const setup = () => {
   const dir = tmp();
-  process.env.JEV_GUARD_YOLO_FILE = join(dir, "yolo.json");
-  process.env.JEV_GUARD_CONFIG_FILE = join(dir, "config.json");
-  process.env.JEV_GUARD_SESSIONS = join(dir, "sessions");
+  process.env.JEW_GUARD_YOLO_FILE = join(dir, "yolo.json");
+  process.env.JEW_GUARD_CONFIG_FILE = join(dir, "config.json");
+  process.env.JEW_GUARD_SESSIONS = join(dir, "sessions");
   const previousData = process.env.XDG_DATA_HOME;
   process.env.XDG_DATA_HOME = join(dir, "data");
   return () => {
-    delete process.env.JEV_GUARD_YOLO_FILE;
-    delete process.env.JEV_GUARD_CONFIG_FILE;
-    delete process.env.JEV_GUARD_SESSIONS;
+    delete process.env.JEW_GUARD_YOLO_FILE;
+    delete process.env.JEW_GUARD_CONFIG_FILE;
+    delete process.env.JEW_GUARD_SESSIONS;
     if (previousData === undefined) delete process.env.XDG_DATA_HOME;
     else process.env.XDG_DATA_HOME = previousData;
   };
@@ -39,19 +39,19 @@ test("commands are registered and report or toggle their state", async () => {
   try {
     const plugin = await loadPlugin();
     assert.deepEqual(Object.keys(plugin.commands).sort(), [
-      "jev-model",
-      "jev-workspace",
+      "jew-model",
+      "jew-workspace",
       "soft",
       "yolo",
     ]);
-    setYolo(true, process.env.JEV_GUARD_YOLO_FILE);
+    setYolo(true, process.env.JEW_GUARD_YOLO_FILE);
     await assert.rejects(run(plugin, "yolo"), /jew-guard: yolo mode is ON/);
-    setYolo(false, process.env.JEV_GUARD_YOLO_FILE);
+    setYolo(false, process.env.JEW_GUARD_YOLO_FILE);
     await assert.rejects(run(plugin, "yolo"), /jew-guard: yolo mode is OFF/);
     await assert.rejects(run(plugin, "yolo", "maybe"), /usage: \/yolo on\|off/);
     await assert.rejects(run(plugin, "yolo", "on"), /jew-guard: yolo mode ON/);
     await assert.rejects(
-      run(plugin, "jev-model"),
+      run(plugin, "jew-model"),
       /jew-guard: no model configured/,
     );
   } finally {
@@ -103,7 +103,7 @@ test("workspace choices are skipped for non-Console endpoints", async () => {
   const cleanup = setup();
   try {
     writeFileSync(
-      process.env.JEV_GUARD_CONFIG_FILE,
+      process.env.JEW_GUARD_CONFIG_FILE,
       JSON.stringify({ endpoint: "openrouter" }),
     );
     const plugin = await loadPlugin();
@@ -117,10 +117,10 @@ test("workspace choices are skipped for non-Console endpoints", async () => {
 
 test("yolo+soft deny reaches the prompt; hard deny still blocks", async () => {
   const cleanup = setup();
-  const prevYolo = process.env.JEV_GUARD_YOLO;
-  const prevSoft = process.env.JEV_GUARD_SOFT;
-  process.env.JEV_GUARD_YOLO = "1";
-  process.env.JEV_GUARD_SOFT = "1";
+  const prevYolo = process.env.JEW_GUARD_YOLO;
+  const prevSoft = process.env.JEW_GUARD_SOFT;
+  process.env.JEW_GUARD_YOLO = "1";
+  process.env.JEW_GUARD_SOFT = "1";
   try {
     const deny = {
       level: "deny",
@@ -144,26 +144,26 @@ test("yolo+soft deny reaches the prompt; hard deny still blocks", async () => {
     };
     await plugin.hooks.evaluate(softEvent);
     assert.equal(softEvent.effect, "ask");
-    delete process.env.JEV_GUARD_SOFT;
+    delete process.env.JEW_GUARD_SOFT;
     await assert.rejects(
       plugin.hooks["execute.before"](call),
       /blocked this call/,
     );
   } finally {
-    if (prevYolo === undefined) delete process.env.JEV_GUARD_YOLO;
-    else process.env.JEV_GUARD_YOLO = prevYolo;
-    if (prevSoft === undefined) delete process.env.JEV_GUARD_SOFT;
-    else process.env.JEV_GUARD_SOFT = prevSoft;
+    if (prevYolo === undefined) delete process.env.JEW_GUARD_YOLO;
+    else process.env.JEW_GUARD_YOLO = prevYolo;
+    if (prevSoft === undefined) delete process.env.JEW_GUARD_SOFT;
+    else process.env.JEW_GUARD_SOFT = prevSoft;
     cleanup();
   }
 });
 
 test("yolo+soft deny passes pre-execution and still prompts", async () => {
   const cleanup = setup();
-  const prevYolo = process.env.JEV_GUARD_YOLO;
-  const prevSoft = process.env.JEV_GUARD_SOFT;
-  process.env.JEV_GUARD_YOLO = "1";
-  process.env.JEV_GUARD_SOFT = "1";
+  const prevYolo = process.env.JEW_GUARD_YOLO;
+  const prevSoft = process.env.JEW_GUARD_SOFT;
+  process.env.JEW_GUARD_YOLO = "1";
+  process.env.JEW_GUARD_SOFT = "1";
   try {
     const deny = {
       level: "deny",
@@ -187,20 +187,20 @@ test("yolo+soft deny passes pre-execution and still prompts", async () => {
     await plugin.hooks.evaluate(event);
     assert.equal(event.effect, "ask");
   } finally {
-    if (prevYolo === undefined) delete process.env.JEV_GUARD_YOLO;
-    else process.env.JEV_GUARD_YOLO = prevYolo;
-    if (prevSoft === undefined) delete process.env.JEV_GUARD_SOFT;
-    else process.env.JEV_GUARD_SOFT = prevSoft;
+    if (prevYolo === undefined) delete process.env.JEW_GUARD_YOLO;
+    else process.env.JEW_GUARD_YOLO = prevYolo;
+    if (prevSoft === undefined) delete process.env.JEW_GUARD_SOFT;
+    else process.env.JEW_GUARD_SOFT = prevSoft;
     cleanup();
   }
 });
 
 test("soft-downgraded deny warns and is remembered as ask", async () => {
   const cleanup = setup();
-  const prevYolo = process.env.JEV_GUARD_YOLO;
-  const prevSoft = process.env.JEV_GUARD_SOFT;
-  process.env.JEV_GUARD_YOLO = "1";
-  process.env.JEV_GUARD_SOFT = "1";
+  const prevYolo = process.env.JEW_GUARD_YOLO;
+  const prevSoft = process.env.JEW_GUARD_SOFT;
+  process.env.JEW_GUARD_YOLO = "1";
+  process.env.JEW_GUARD_SOFT = "1";
   const warnings = [];
   const warn = console.warn;
   console.warn = (message) => {
@@ -221,10 +221,10 @@ test("soft-downgraded deny warns and is remembered as ask", async () => {
     assert.equal(readSession("s").calls.at(-1).level, "ask");
   } finally {
     console.warn = warn;
-    if (prevYolo === undefined) delete process.env.JEV_GUARD_YOLO;
-    else process.env.JEV_GUARD_YOLO = prevYolo;
-    if (prevSoft === undefined) delete process.env.JEV_GUARD_SOFT;
-    else process.env.JEV_GUARD_SOFT = prevSoft;
+    if (prevYolo === undefined) delete process.env.JEW_GUARD_YOLO;
+    else process.env.JEW_GUARD_YOLO = prevYolo;
+    if (prevSoft === undefined) delete process.env.JEW_GUARD_SOFT;
+    else process.env.JEW_GUARD_SOFT = prevSoft;
     cleanup();
   }
 });
@@ -358,7 +358,7 @@ test("jew_yolo tool is read-only status", async () => {
   }
 });
 
-test("/jev-model probes the candidate before saving it", async () => {
+test("/jew-model probes the candidate before saving it", async () => {
   const cleanup = setup();
   let probed;
   try {
@@ -369,7 +369,7 @@ test("/jev-model probes the candidate before saving it", async () => {
       },
     });
     await assert.rejects(
-      run(plugin, "jev-model", "test-model"),
+      run(plugin, "jew-model", "test-model"),
       /switched to test-model \(the guard endpoint answered, p=0\.90\)/,
     );
     assert.equal(probed, "test-model");
@@ -379,7 +379,7 @@ test("/jev-model probes the candidate before saving it", async () => {
   }
 });
 
-test("/jev-model keeps the previous model when the probe fails", async () => {
+test("/jew-model keeps the previous model when the probe fails", async () => {
   const cleanup = setup();
   try {
     saveModel("previous-model");
@@ -389,7 +389,7 @@ test("/jev-model keeps the previous model when the probe fails", async () => {
       },
     });
     await assert.rejects(
-      run(plugin, "jev-model", "test-model"),
+      run(plugin, "jew-model", "test-model"),
       /Previous model kept/,
     );
     assert.equal(readModel(), "previous-model");
@@ -428,11 +428,11 @@ test("after-hook marks results when the scan fails", async () => {
   }
 });
 
-test("/jev-model says when no model is configured", async () => {
+test("/jew-model says when no model is configured", async () => {
   const cleanup = setup();
   try {
     const plugin = await loadPlugin();
-    await assert.rejects(run(plugin, "jev-model"), /no model configured/);
+    await assert.rejects(run(plugin, "jew-model"), /no model configured/);
   } finally {
     cleanup();
   }

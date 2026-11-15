@@ -9,11 +9,11 @@ import { setYolo } from "../src/yolo.js";
 const CLEAR = [
   "OPENCODE_CONSOLE_TOKEN",
   "OPENCODE_API_KEY",
-  "JEV_GUARD_YOLO",
-  "JEV_GUARD_SOFT",
-  "JEV_GUARD_FAIL_CLOSED",
-  "JEV_GUARD_YOLO_FILE",
-  "JEV_GUARD_CONFIG_FILE",
+  "JEW_GUARD_YOLO",
+  "JEW_GUARD_SOFT",
+  "JEW_GUARD_FAIL_CLOSED",
+  "JEW_GUARD_YOLO_FILE",
+  "JEW_GUARD_CONFIG_FILE",
   "XDG_DATA_HOME",
   "XDG_CONFIG_HOME",
 ];
@@ -26,7 +26,7 @@ function setup() {
     saved[k] = process.env[k];
     delete process.env[k];
   }
-  process.env.JEV_GUARD_YOLO_FILE = yoloFile;
+  process.env.JEW_GUARD_YOLO_FILE = yoloFile;
   process.env.XDG_DATA_HOME = dir;
   process.env.XDG_CONFIG_HOME = dir;
   setYolo(true, yoloFile);
@@ -38,7 +38,7 @@ function setup() {
   };
 }
 
-test("yolo falls back to the configured rule when Jev cannot answer", async () => {
+test("yolo falls back to the configured rule when the decision model cannot answer", async () => {
   const restore = setup();
   const warn = console.warn;
   console.warn = () => {};
@@ -74,7 +74,7 @@ test("yolo falls back to the configured rule when Jev cannot answer", async () =
 test("without yolo an unjudgeable call fails open", async () => {
   const restore = setup();
   try {
-    setYolo(false, process.env.JEV_GUARD_YOLO_FILE);
+    setYolo(false, process.env.JEW_GUARD_YOLO_FILE);
     const plugin = await loadPlugin({
       assessAction: async () => {
         throw new Error("offline");

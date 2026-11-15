@@ -11,7 +11,7 @@ import { effectiveModel } from "./model.js";
 import { configDir } from "./paths.js";
 
 const cacheFile = () =>
-  process.env.JEV_GUARD_SCAN_CACHE ?? join(configDir(), "scan-cache.json");
+  process.env.JEW_GUARD_SCAN_CACHE ?? join(configDir(), "scan-cache.json");
 const CACHE_VERSION = 3;
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 5000;

@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { configDir } from "./paths.js";
 
 const modeFile = () =>
-  process.env.JEV_GUARD_YOLO_FILE ?? join(configDir(), "yolo.json");
+  process.env.JEW_GUARD_YOLO_FILE ?? join(configDir(), "yolo.json");
 
 export function readModes(file = modeFile()) {
   try {
@@ -58,11 +58,11 @@ function isEnvOn(value) {
 }
 
 export function isYolo(env = process.env) {
-  if (isEnvOn(env.JEV_GUARD_YOLO)) return true;
+  if (isEnvOn(env.JEW_GUARD_YOLO)) return true;
   return readModes().yolo;
 }
 
 export function isSoft(env = process.env) {
-  if (isEnvOn(env.JEV_GUARD_SOFT)) return true;
+  if (isEnvOn(env.JEW_GUARD_SOFT)) return true;
   return readModes().soft;
 }

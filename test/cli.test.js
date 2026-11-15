@@ -17,7 +17,7 @@ function sandbox() {
     HOME: dir,
     XDG_CONFIG_HOME: join(dir, "config"),
     XDG_DATA_HOME: data,
-    JEV_GUARD_CONFIG_FILE: config,
+    JEW_GUARD_CONFIG_FILE: config,
   };
   return {
     config,

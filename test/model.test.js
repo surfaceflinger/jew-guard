@@ -13,17 +13,17 @@ import {
 
 function isolate({ config } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "jew-"));
-  const previous = process.env.JEV_GUARD_CONFIG_FILE;
-  process.env.JEV_GUARD_CONFIG_FILE = join(dir, "config.json");
+  const previous = process.env.JEW_GUARD_CONFIG_FILE;
+  process.env.JEW_GUARD_CONFIG_FILE = join(dir, "config.json");
   if (config) {
-    writeFileSync(process.env.JEV_GUARD_CONFIG_FILE, JSON.stringify(config));
+    writeFileSync(process.env.JEW_GUARD_CONFIG_FILE, JSON.stringify(config));
   }
   return {
-    path: process.env.JEV_GUARD_CONFIG_FILE,
-    env: { JEV_GUARD_CONFIG_FILE: process.env.JEV_GUARD_CONFIG_FILE },
+    path: process.env.JEW_GUARD_CONFIG_FILE,
+    env: { JEW_GUARD_CONFIG_FILE: process.env.JEW_GUARD_CONFIG_FILE },
     restore() {
-      if (previous === undefined) delete process.env.JEV_GUARD_CONFIG_FILE;
-      else process.env.JEV_GUARD_CONFIG_FILE = previous;
+      if (previous === undefined) delete process.env.JEW_GUARD_CONFIG_FILE;
+      else process.env.JEW_GUARD_CONFIG_FILE = previous;
     },
   };
 }

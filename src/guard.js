@@ -1,4 +1,4 @@
-import { ask } from "./jev.js";
+import { ask } from "./decision.js";
 
 export const SCAN_QUESTIONS = {
   directed: {
@@ -186,16 +186,16 @@ export function thresholds(env = process.env) {
     return v >= 0 && v <= max ? v : fallback;
   };
   return {
-    denyScore: clamped("JEV_GUARD_DENY_SCORE", 2.5, 3),
-    askScore: clamped("JEV_GUARD_ASK_SCORE", 1.5, 3),
-    askP: clamped("JEV_GUARD_ASK_P", 0.75),
-    injectP: clamped("JEV_GUARD_INJECT_P", 0.6),
-    untrustedP: clamped("JEV_GUARD_UNTRUSTED_P", 0.7),
-    userP: clamped("JEV_GUARD_USER_P", 0.85),
-    skillP: clamped("JEV_GUARD_SKILL_P", 0.8),
-    skillSeriousP: clamped("JEV_GUARD_SKILL_SERIOUS_P", 0.45),
-    minConf: clamped("JEV_GUARD_MIN_CONFIDENCE", 0.5),
-    margin: clamped("JEV_GUARD_MARGIN", 0.1),
+    denyScore: clamped("JEW_GUARD_DENY_SCORE", 2.5, 3),
+    askScore: clamped("JEW_GUARD_ASK_SCORE", 1.5, 3),
+    askP: clamped("JEW_GUARD_ASK_P", 0.75),
+    injectP: clamped("JEW_GUARD_INJECT_P", 0.6),
+    untrustedP: clamped("JEW_GUARD_UNTRUSTED_P", 0.7),
+    userP: clamped("JEW_GUARD_USER_P", 0.85),
+    skillP: clamped("JEW_GUARD_SKILL_P", 0.8),
+    skillSeriousP: clamped("JEW_GUARD_SKILL_SERIOUS_P", 0.45),
+    minConf: clamped("JEW_GUARD_MIN_CONFIDENCE", 0.5),
+    margin: clamped("JEW_GUARD_MARGIN", 0.1),
   };
 }
 const commaSet = (csv) =>
@@ -262,7 +262,10 @@ export function decide(
     !finiteNumber(user_requested?.p) ||
     !finiteNumber(from_untrusted?.p)
   )
-    return { level: "ask", why: "Jev returned an incomplete verdict" };
+    return {
+      level: "ask",
+      why: "the decision model returned an incomplete verdict",
+    };
   const plantedP = from_untrusted.p;
   if (plantedP >= limits.untrustedP)
     return {
@@ -292,13 +295,18 @@ export function decide(
     if (explicitlyRequested)
       return { level: "allow", why: "the user explicitly asked for it" };
     let why;
-    if (unsure) why = "Jev is unsure about this call";
-    else if (seriousHarmMass) why = "Jev sees a real chance of serious harm";
+    if (unsure) why = "the decision model is unsure about this call";
+    else if (seriousHarmMass)
+      why = "the decision model sees a real chance of serious harm";
     else if (plantedNearMiss)
       why = "it may carry out an instruction from untrusted content";
     return { level: "ask", ...(why ? { why } : {}) };
   }
-  if (unsure) return { level: "ask", why: "Jev is unsure about this call" };
+  if (unsure)
+    return {
+      level: "ask",
+      why: "the decision model is unsure about this call",
+    };
   return { level: "allow" };
 }
 
@@ -333,7 +341,7 @@ export async function assessAction(
   const toolName = String(tool ?? "").toLowerCase();
   if (
     READ_ONLY.has(toolName) ||
-    commaSet(env.JEV_GUARD_SKIP_TOOLS).has(toolName)
+    commaSet(env.JEW_GUARD_SKIP_TOOLS).has(toolName)
   )
     return null;
   const limits = thresholds(env);
@@ -367,7 +375,7 @@ export async function assessAction(
   const call = `${tool} ${preview(input)}`;
   const message =
     level === "deny"
-      ? `jew-guard blocked this call${why ? ` because ${why}` : ""} (${callStats}): ${call}. If the user really wants it, they can run it themselves or lower JEV_GUARD_DENY_SCORE.`
+      ? `jew-guard blocked this call${why ? ` because ${why}` : ""} (${callStats}): ${call}. If the user really wants it, they can run it themselves or lower JEW_GUARD_DENY_SCORE.`
       : level === "ask"
         ? `jew-guard: this call needs the user's approval${why ? ` because ${why}` : ""} (${callStats}): ${call}`
         : `jew-guard: ok${why ? `, ${why}` : ""} (${callStats})`;
@@ -467,7 +475,7 @@ export async function scanContent({ text, tool, source }, options = {}) {
   const toolName = String(tool ?? "").toLowerCase();
   if (
     NEVER_EXTERNAL.has(toolName) ||
-    commaSet(env.JEV_GUARD_SKIP_SCAN).has(toolName)
+    commaSet(env.JEW_GUARD_SKIP_SCAN).has(toolName)
   )
     return null;
   if (!shouldScan(text)) return null;

@@ -22,7 +22,7 @@ import urllib.request
 
 HOME = os.path.expanduser("~")
 CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config"), "jew-guard")
-CONFIG_FILE = os.environ.get("JEV_GUARD_CONFIG_FILE") or os.path.join(CONFIG_DIR, "config.json")
+CONFIG_FILE = os.environ.get("JEW_GUARD_CONFIG_FILE") or os.path.join(CONFIG_DIR, "config.json")
 OPENCODE_DATA = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"), "opencode")
 CONSOLE_ORGS = "https://opencode.ai/console/api/orgs"
 
@@ -221,7 +221,7 @@ def cmd_auth(args):
     cfg = config()
     endpoint = args.endpoint or (cfg.get("endpoint") if cfg else None)
     if not endpoint and interactive():
-        endpoint = choose("Endpoint", [("opencode", "opencode    Console gateway (opencode.ai) — Jev models"),
+        endpoint = choose("Endpoint", [("opencode", "opencode    Console gateway (opencode.ai) — decision models"),
                                        ("openrouter", "openrouter  OpenRouter decisions"),
                                        ("custom", "custom      any System One / decisions URL")])
     if not endpoint:

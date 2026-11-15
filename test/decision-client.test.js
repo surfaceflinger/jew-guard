@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ask, backend, OPENROUTER_URL } from "../src/jev.js";
+import { ask, backend, OPENROUTER_URL } from "../src/decision.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "jew-"));
 const sqlite = (() => {
@@ -28,7 +28,7 @@ const env = (extra = {}) => ({
 const withConfig = (config, extra = {}) => {
   const dir = tmp();
   writeFileSync(join(dir, "config.json"), JSON.stringify(config));
-  return env({ JEV_GUARD_CONFIG_FILE: join(dir, "config.json"), ...extra });
+  return env({ JEW_GUARD_CONFIG_FILE: join(dir, "config.json"), ...extra });
 };
 
 function seedDb(dir, provider, key) {

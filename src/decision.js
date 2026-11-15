@@ -102,7 +102,7 @@ export async function ask(state, questions, options = {}) {
         "no credentials: run /connect in opencode, or configure a key with jew-guard auth",
       );
     throw new Error(
-      "console workspaces unresolved: run /jev-workspace and pick your workspace",
+      "console workspaces unresolved: run /jew-workspace and pick your workspace",
     );
   }
   return request(
@@ -120,13 +120,13 @@ async function request(
   { env = process.env, fetchImpl = fetch, signal, timeoutMs } = {},
 ) {
   const budget = AbortSignal.timeout(
-    timeoutMs ?? +(env.JEV_GUARD_TIMEOUT_MS || 20_000),
+    timeoutMs ?? +(env.JEW_GUARD_TIMEOUT_MS || 20_000),
   );
   const abort = signal ? AbortSignal.any([signal, budget]) : budget;
   const model = target.model ?? effectiveModel(env)?.model;
   if (!model)
     throw new Error(
-      "no model configured: run /jev-model or jew-guard model set <id>",
+      "no model configured: run /jew-model or jew-guard model set <id>",
     );
   const url = target.url ?? CONSOLE_URL;
   const headers = { "Content-Type": "application/json" };

@@ -22,15 +22,15 @@ test("match by id, name, case-insensitive; blank/unknown null", () => {
 test("selection reads and writes the config.json org", async () => {
   const { readSelection, saveSelection } = await import("../src/workspace.js");
   const dir = mkdtempSync(join(tmpdir(), "jew-"));
-  const previous = process.env.JEV_GUARD_CONFIG_FILE;
-  process.env.JEV_GUARD_CONFIG_FILE = join(dir, "config.json");
+  const previous = process.env.JEW_GUARD_CONFIG_FILE;
+  process.env.JEW_GUARD_CONFIG_FILE = join(dir, "config.json");
   try {
     assert.equal(readSelection(), null);
     saveSelection({ id: "wrk_1", name: "sucrose" });
     assert.deepEqual(readSelection(), { id: "wrk_1", name: "sucrose" });
   } finally {
-    if (previous === undefined) delete process.env.JEV_GUARD_CONFIG_FILE;
-    else process.env.JEV_GUARD_CONFIG_FILE = previous;
+    if (previous === undefined) delete process.env.JEW_GUARD_CONFIG_FILE;
+    else process.env.JEW_GUARD_CONFIG_FILE = previous;
   }
 });
 

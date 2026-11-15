@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { configDir } from "./paths.js";
 
 const sessionDir = () =>
-  process.env.JEV_GUARD_SESSIONS ?? join(configDir(), "sessions");
+  process.env.JEW_GUARD_SESSIONS ?? join(configDir(), "sessions");
 const KEEP_LAST = { calls: 12, flags: 10 };
 const MAX_SESSION_FILES = 200;
 const SESSION_TTL_MS = 7 * 86_400_000;

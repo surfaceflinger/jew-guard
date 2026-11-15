@@ -7,13 +7,13 @@ import { readSession, remember, sessionFile } from "../src/session.js";
 
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), "jew-"));
-  const previous = process.env.JEV_GUARD_SESSIONS;
-  process.env.JEV_GUARD_SESSIONS = dir;
+  const previous = process.env.JEW_GUARD_SESSIONS;
+  process.env.JEW_GUARD_SESSIONS = dir;
   return {
     dir,
     restore: () => {
-      if (previous === undefined) delete process.env.JEV_GUARD_SESSIONS;
-      else process.env.JEV_GUARD_SESSIONS = previous;
+      if (previous === undefined) delete process.env.JEW_GUARD_SESSIONS;
+      else process.env.JEW_GUARD_SESSIONS = previous;
     },
   };
 }
@@ -43,7 +43,7 @@ test("session write failures do not throw", () => {
   console.warn = () => {};
   try {
     writeFileSync(join(dir, "blocked"), "not a directory");
-    process.env.JEV_GUARD_SESSIONS = join(dir, "blocked");
+    process.env.JEW_GUARD_SESSIONS = join(dir, "blocked");
     assert.doesNotThrow(() => remember("s", "calls", { tool: "shell" }));
   } finally {
     console.warn = warn;

@@ -6,12 +6,12 @@ import { join } from "node:path";
 import { loadPlugin } from "./harness.js";
 
 const ENV = [
-  "JEV_GUARD_YOLO",
-  "JEV_GUARD_SOFT",
-  "JEV_GUARD_FAIL_CLOSED",
-  "JEV_GUARD_SESSIONS",
-  "JEV_GUARD_YOLO_FILE",
-  "JEV_GUARD_CONFIG_FILE",
+  "JEW_GUARD_YOLO",
+  "JEW_GUARD_SOFT",
+  "JEW_GUARD_FAIL_CLOSED",
+  "JEW_GUARD_SESSIONS",
+  "JEW_GUARD_YOLO_FILE",
+  "JEW_GUARD_CONFIG_FILE",
 ];
 
 async function decide({
@@ -28,11 +28,11 @@ async function decide({
     delete process.env[key];
   }
   const dir = mkdtempSync(join(tmpdir(), "jew-"));
-  process.env.JEV_GUARD_SESSIONS = join(dir, "sessions");
-  process.env.JEV_GUARD_YOLO_FILE = join(dir, "yolo.json");
-  if (yolo) process.env.JEV_GUARD_YOLO = "1";
-  if (soft) process.env.JEV_GUARD_SOFT = "1";
-  if (failClosed) process.env.JEV_GUARD_FAIL_CLOSED = "1";
+  process.env.JEW_GUARD_SESSIONS = join(dir, "sessions");
+  process.env.JEW_GUARD_YOLO_FILE = join(dir, "yolo.json");
+  if (yolo) process.env.JEW_GUARD_YOLO = "1";
+  if (soft) process.env.JEW_GUARD_SOFT = "1";
+  if (failClosed) process.env.JEW_GUARD_FAIL_CLOSED = "1";
   const warn = console.warn;
   const error = console.error;
   console.warn = () => {};
@@ -43,7 +43,7 @@ async function decide({
       if (verdict === "down") throw new Error("offline");
       return verdict === null
         ? null
-        : { level: verdict, message: `jev ${verdict}` };
+        : { level: verdict, message: `model ${verdict}` };
     };
     const plugin = await loadPlugin({ assessAction: judge });
     const call = {
@@ -78,7 +78,7 @@ async function decide({
   }
 }
 
-// A low-confidence Jev allow is emitted as an "ask" verdict by decide(); guard.test.js covers that mapping.
+// A low-confidence model allow is emitted as an "ask" verdict by decide(); guard.test.js covers that mapping.
 // Configured deny is core-owned: a resource "*" deny removes the tool, and evaluate is not called.
 // Deny cases below only check that execute.before does not turn a deny into a run.
 const CASES = [
@@ -186,35 +186,39 @@ const CASES = [
     { rule: "allow", verdict: null, tool: "read", yolo: true },
     "allow",
   ],
-  ["Jev down + allow + fail-open", { rule: "allow", verdict: "down" }, "allow"],
-  ["Jev down + ask + fail-open", { rule: "ask", verdict: "down" }, "ask"],
   [
-    "Jev down + ask + fail-open + yolo on",
+    "model down + allow + fail-open",
+    { rule: "allow", verdict: "down" },
+    "allow",
+  ],
+  ["model down + ask + fail-open", { rule: "ask", verdict: "down" }, "ask"],
+  [
+    "model down + ask + fail-open + yolo on",
     { rule: "ask", verdict: "down", yolo: true },
     "ask",
   ],
   [
-    "Jev down + allow + fail-open + yolo on",
+    "model down + allow + fail-open + yolo on",
     { rule: "allow", verdict: "down", yolo: true },
     "allow",
   ],
   [
-    "Jev down + allow + fail-closed",
+    "model down + allow + fail-closed",
     { rule: "allow", verdict: "down", failClosed: true },
     "blocked",
   ],
   [
-    "Jev down + ask + fail-closed",
+    "model down + ask + fail-closed",
     { rule: "ask", verdict: "down", failClosed: true },
     "blocked",
   ],
   [
-    "Jev down + read-only + fail-closed + yolo off",
+    "model down + read-only + fail-closed + yolo off",
     { rule: "ask", verdict: "down", failClosed: true, tool: "read" },
     "ask",
   ],
   [
-    "Jev down + read-only + fail-closed + yolo on",
+    "model down + read-only + fail-closed + yolo on",
     {
       rule: "ask",
       verdict: "down",
@@ -225,27 +229,27 @@ const CASES = [
     "allow",
   ],
   [
-    "core deny (narrow) + Jev allow",
+    "core deny (narrow) + model allow",
     { rule: "deny", verdict: "allow" },
     "platform",
   ],
   [
-    "core deny (narrow) + Jev deny + guard blocks first",
+    "core deny (narrow) + model deny + guard blocks first",
     { rule: "deny", verdict: "deny" },
     "blocked",
   ],
   [
-    "core deny (narrow) + Jev deny + yolo+soft + core blocks",
+    "core deny (narrow) + model deny + yolo+soft + core blocks",
     { rule: "deny", verdict: "deny", yolo: true, soft: true },
     "platform",
   ],
   [
-    "core deny (narrow) + Jev down + fail-open + core blocks",
+    "core deny (narrow) + model down + fail-open + core blocks",
     { rule: "deny", verdict: "down" },
     "platform",
   ],
   [
-    "core deny (narrow) + Jev down + fail-closed + guard blocks first",
+    "core deny (narrow) + model down + fail-closed + guard blocks first",
     { rule: "deny", verdict: "down", failClosed: true },
     "blocked",
   ],

@@ -9,13 +9,13 @@ import { setYolo } from "../src/yolo.js";
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), "jew-"));
   const yoloFile = join(dir, "yolo.json");
-  process.env.JEV_GUARD_YOLO_FILE = yoloFile;
-  process.env.JEV_GUARD_SESSIONS = join(dir, "sessions");
+  process.env.JEW_GUARD_YOLO_FILE = yoloFile;
+  process.env.JEW_GUARD_SESSIONS = join(dir, "sessions");
   return {
     yoloFile,
     cleanup: () => {
-      delete process.env.JEV_GUARD_YOLO_FILE;
-      delete process.env.JEV_GUARD_SESSIONS;
+      delete process.env.JEW_GUARD_YOLO_FILE;
+      delete process.env.JEW_GUARD_SESSIONS;
     },
   };
 }
@@ -69,7 +69,7 @@ test("evaluate hook reuses the verdict judged before the call", async () => {
   }
 });
 
-test("yolo does not auto-approve a Jev ask", async () => {
+test("yolo does not auto-approve a model ask", async () => {
   const { yoloFile, cleanup } = setup();
   try {
     setYolo(true, yoloFile);
@@ -88,10 +88,10 @@ test("yolo does not auto-approve a Jev ask", async () => {
 
 test("evaluate hook turns a yolo+soft deny into a prompt with the reason", async () => {
   const { cleanup } = setup();
-  const prevYolo = process.env.JEV_GUARD_YOLO;
-  const prevSoft = process.env.JEV_GUARD_SOFT;
-  process.env.JEV_GUARD_YOLO = "1";
-  process.env.JEV_GUARD_SOFT = "1";
+  const prevYolo = process.env.JEW_GUARD_YOLO;
+  const prevSoft = process.env.JEW_GUARD_SOFT;
+  process.env.JEW_GUARD_YOLO = "1";
+  process.env.JEW_GUARD_SOFT = "1";
   try {
     const message = "jew-guard blocked this call (risk 3.0/3): shell rm -rf /";
     const plugin = await loadPlugin({
@@ -103,15 +103,15 @@ test("evaluate hook turns a yolo+soft deny into a prompt with the reason", async
     assert.equal(event.effect, "ask");
     assert.equal(event.message, message);
   } finally {
-    if (prevYolo === undefined) delete process.env.JEV_GUARD_YOLO;
-    else process.env.JEV_GUARD_YOLO = prevYolo;
-    if (prevSoft === undefined) delete process.env.JEV_GUARD_SOFT;
-    else process.env.JEV_GUARD_SOFT = prevSoft;
+    if (prevYolo === undefined) delete process.env.JEW_GUARD_YOLO;
+    else process.env.JEW_GUARD_YOLO = prevYolo;
+    if (prevSoft === undefined) delete process.env.JEW_GUARD_SOFT;
+    else process.env.JEW_GUARD_SOFT = prevSoft;
     cleanup();
   }
 });
 
-test("evaluate keeps a config ask when Jev allows and yolo is off", async () => {
+test("evaluate keeps a config ask when the model allows and yolo is off", async () => {
   const { cleanup } = setup();
   try {
     const plugin = await loadPlugin({
@@ -126,7 +126,7 @@ test("evaluate keeps a config ask when Jev allows and yolo is off", async () => 
   }
 });
 
-test("yolo auto-approves a config ask when Jev allows", async () => {
+test("yolo auto-approves a config ask when the model allows", async () => {
   const { yoloFile, cleanup } = setup();
   try {
     setYolo(true, yoloFile);
@@ -342,8 +342,8 @@ test("session context is fetched once per assistant message", async () => {
 
 test("context failures fail open without judging", async () => {
   const { cleanup } = setup();
-  const previous = process.env.JEV_GUARD_FAIL_CLOSED;
-  delete process.env.JEV_GUARD_FAIL_CLOSED;
+  const previous = process.env.JEW_GUARD_FAIL_CLOSED;
+  delete process.env.JEW_GUARD_FAIL_CLOSED;
   const error = console.error;
   console.error = () => {};
   let judged = false;
@@ -367,8 +367,8 @@ test("context failures fail open without judging", async () => {
     assert.equal(judged, false);
   } finally {
     console.error = error;
-    if (previous === undefined) delete process.env.JEV_GUARD_FAIL_CLOSED;
-    else process.env.JEV_GUARD_FAIL_CLOSED = previous;
+    if (previous === undefined) delete process.env.JEW_GUARD_FAIL_CLOSED;
+    else process.env.JEW_GUARD_FAIL_CLOSED = previous;
     cleanup();
   }
 });

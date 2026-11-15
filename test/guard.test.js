@@ -26,7 +26,7 @@ const A = (risk, approval = 0, user = 0, untrusted = 0) => ({
   from_untrusted: { p: untrusted },
 });
 
-test("incomplete or mistyped Jev answers ask instead of allowing", () => {
+test("incomplete or mistyped model answers ask instead of allowing", () => {
   assert.equal(decide({}).level, "ask");
   assert.equal(
     decide({
@@ -99,7 +99,7 @@ test("low confidence turns allow into ask, never softens deny", () => {
   );
 });
 test("env overrides apply; out-of-range falls back", () => {
-  const t = thresholds({ JEV_GUARD_DENY_SCORE: "2.0", JEV_GUARD_ASK_P: "99" });
+  const t = thresholds({ JEW_GUARD_DENY_SCORE: "2.0", JEW_GUARD_ASK_P: "99" });
   assert.equal(t.denyScore, 2.0);
   assert.equal(t.askP, 0.75);
   assert.equal(decide(A(2.2), t).level, "deny");
@@ -191,7 +191,7 @@ test("contested kind flags as the hostile runner-up", () => {
   assert.equal(inst.kind, "exfiltration");
 });
 test("approval band holds on exact float boundaries with custom thresholds", () => {
-  const t = thresholds({ JEV_GUARD_ASK_P: "0.8" });
+  const t = thresholds({ JEW_GUARD_ASK_P: "0.8" });
   assert.equal(decide(A(0.5, 0.7), t).level, "ask");
 });
 
@@ -268,7 +268,7 @@ writeFileSync(
   }),
 );
 const scanEnv = {
-  JEV_GUARD_CONFIG_FILE: join(scanDir, "config.json"),
+  JEW_GUARD_CONFIG_FILE: join(scanDir, "config.json"),
   XDG_CONFIG_HOME: "/nonexistent",
   XDG_DATA_HOME: "/nonexistent",
 };
