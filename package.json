@@ -1,6 +1,6 @@
 {
   "name": "jew-guard",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "Opencode-only security guard: every tool call risk-scored and every tool result scanned by a decision model (TypeSafe System One, OpenRouter decisions, or any compatible endpoint) using your existing OpenCode credential. Zero-config: no keys, no key files.",
   "type": "module",
   "main": "./src/opencode.js",
