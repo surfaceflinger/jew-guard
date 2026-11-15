@@ -46,24 +46,24 @@ con.commit()
 
 test("model set writes config.json", () => {
   const s = sandbox();
-  s.run(["model", "set", "jev-1.13"]);
-  assert.equal(JSON.parse(readFileSync(s.config, "utf8")).model, "jev-1.13");
+  s.run(["model", "set", "test-model"]);
+  assert.equal(JSON.parse(readFileSync(s.config, "utf8")).model, "test-model");
 });
 
 test("auth stores the provider reference, never the key", () => {
   const s = sandbox();
   seedDb(s, "openrouter", "sk-or-secret");
   s.run(["auth", "--endpoint", "openrouter", "--source", "auth"]);
-  const config = readFileSync(s.config, "utf8");
-  assert.equal(JSON.parse(config).keyProvider, "openrouter");
-  assert.equal(JSON.parse(config).model, "inception/mercury-decide:free");
-  assert.ok(!config.includes("sk-or-secret"));
+  const config = JSON.parse(readFileSync(s.config, "utf8"));
+  assert.equal(config.keyProvider, "openrouter");
+  assert.equal(config.model, undefined);
+  assert.ok(!readFileSync(s.config, "utf8").includes("sk-or-secret"));
 });
 
 test("invalid config.json is refused, not overwritten", () => {
   const s = sandbox();
   writeFileSync(s.config, "{ oops");
-  assert.throws(() => s.run(["model", "set", "jev-1.13"]));
+  assert.throws(() => s.run(["model", "set", "test-model"]));
   assert.equal(readFileSync(s.config, "utf8"), "{ oops");
 });
 

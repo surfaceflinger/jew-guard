@@ -127,18 +127,21 @@ instead of reusing it. Code Mode nested calls count separately.
 
 ## Commands
 
-- `/jev-workspace [name]` — pick the billing workspace (bare lists them)
-- `/jev-model [id]` — switch models; test-calls first, keeps the old one on failure. `JEV_MODEL` wins; unset it to switch
+- `/jev-workspace [name]` — pick the billing workspace (bare opens the picker when there is more than one)
+- `/jev-model [id]` — pick a model from the live decision catalog, or switch by id; test-calls first, keeps the old one on failure
 - `/yolo on|off` — auto-approve platform prompts when Jev confidently allows
 - `/soft on|off` — with yolo, deny verdicts become prompts instead of blocks
 
 The agent can't touch any of these — they're human-only by construction.
 
 In the TUI, a bundled TUI part handles the same four commands: results appear
-as toasts, and bare `/jev-workspace` opens a picker. It calls the server
+as toasts, and bare `/jev-workspace` and `/jev-model` open selectable lists
+(workspaces, and decision models grouped by provider). It calls the server
 through an RPC, so the guard state is the same as with the server commands.
 Desktop, web, and headless clients keep the server commands, where text can
 only surface as a command error.
+
+There is no default model: pick one before the guard can call the endpoint.
 
 ## Tuning
 
@@ -156,8 +159,6 @@ only surface as a command error.
 | `JEV_GUARD_TIMEOUT_MS` | `20000` | total budget per Jev call |
 | `JEV_GUARD_FAIL_CLOSED` | unset | block when Jev is unreachable |
 | `JEV_GUARD_SKIP_TOOLS` / `JEV_GUARD_SKIP_SCAN` | unset | comma-separated skip lists |
-| `JEV_MODEL` / `JEV_BASE_URL` / `JEV_API_KEY` | unset | model override / custom server / direct key |
-| `OPENROUTER_API_KEY` | unset | fallback judge when Jev fails (free tier trains on prompts) |
 
 Out-of-range numbers fall back to defaults. The skip lists use V2 action
 names (`shell`, not `bash`). `bin/jew-guard` writes static config for

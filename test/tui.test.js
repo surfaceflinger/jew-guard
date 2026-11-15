@@ -6,7 +6,7 @@ import { JewGuardRpc } from "../src/rpc.js";
 const command = (commands, name) =>
   commands.find((entry) => entry.slash?.name === name);
 
-function load(overrides = {}) {
+function load(overrides = {}, selection = "wrk_2") {
   const calls = [];
   const toasts = [];
   const dialogs = [];
@@ -23,6 +23,19 @@ function load(overrides = {}) {
     model: async (input) => {
       calls.push(["model", input]);
       return { message: "model set", variant: "success" };
+    },
+    models: async () => {
+      calls.push(["models"]);
+      return {
+        current: "vendor/model-a",
+        items: [
+          {
+            id: "vendor/model-a",
+            name: "Model A",
+            vendor: "typesafe",
+          },
+        ],
+      };
     },
     workspace: async (input) => {
       calls.push(["workspace", input]);
@@ -57,7 +70,7 @@ function load(overrides = {}) {
       dialog: {
         select: async (options) => {
           dialogs.push(options);
-          return "wrk_2";
+          return selection;
         },
       },
     },
@@ -82,8 +95,28 @@ test("tui slash commands call the rpc and toast the result", async () => {
   assert.deepEqual(calls.at(-1), ["yolo", { text: "on" }]);
   assert.equal(toasts.at(-1).message, "yolo ON");
   assert.equal(toasts.at(-1).variant, "success");
+  await command(commands, "jev-model").run("direct-model");
+  assert.deepEqual(calls.at(-1), ["model", { text: "direct-model" }]);
+});
+
+test("bare jew-model opens the decision catalog picker", async () => {
+  const { calls, dialogs, commands } = load({}, "vendor/model-a");
   await command(commands, "jev-model").run("");
-  assert.deepEqual(calls.at(-1), ["model", { text: "" }]);
+  assert.equal(dialogs[0].options[0].value, "vendor/model-a");
+  assert.equal(dialogs[0].options[0].category, "typesafe");
+  assert.deepEqual(calls.at(-1), ["model", { text: "vendor/model-a" }]);
+});
+
+test("a single workspace is saved without a picker", async () => {
+  const { calls, dialogs, commands } = load({
+    workspaces: async () => ({
+      current: "",
+      items: [{ id: "wrk_1", name: "one" }],
+    }),
+  });
+  await command(commands, "jev-workspace").run("");
+  assert.equal(dialogs.length, 0);
+  assert.deepEqual(calls.at(-1), ["workspace", { text: "wrk_1" }]);
 });
 
 test("bare jew-workspace opens a picker and saves the choice", async () => {

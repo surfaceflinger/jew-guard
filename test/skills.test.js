@@ -12,17 +12,31 @@ const res = (status, body) => ({
   json: async () => body,
 });
 
+function configEnv(dir) {
+  const file = join(dir, "config.json");
+  writeFileSync(
+    file,
+    JSON.stringify({
+      endpoint: "custom",
+      url: "https://kev.example/v1/systemone",
+      key: "secret",
+      model: "test-model",
+    }),
+  );
+  return {
+    JEV_GUARD_CONFIG_FILE: file,
+    XDG_CONFIG_HOME: dir,
+    XDG_DATA_HOME: dir,
+  };
+}
+
 test("cached verdict keeps probabilities: contested clean flags the same on re-read", async () => {
   const dir = mkdtempSync(join(tmpdir(), "jew-"));
   const prevCache = process.env.JEV_GUARD_SCAN_CACHE;
   process.env.JEV_GUARD_SCAN_CACHE = join(dir, "scan-cache.json");
   let calls = 0;
   const opts = {
-    env: {
-      JEV_BASE_URL: "https://kev.example",
-      XDG_CONFIG_HOME: dir,
-      XDG_DATA_HOME: dir,
-    },
+    env: configEnv(dir),
     fetchImpl: async () => {
       calls++;
       return res(200, {
@@ -74,11 +88,7 @@ test("cached verdict does not round across a threshold", async () => {
   process.env.JEV_GUARD_SCAN_CACHE = join(dir, "scan-cache.json");
   let calls = 0;
   const opts = {
-    env: {
-      JEV_BASE_URL: "https://kev.example",
-      XDG_CONFIG_HOME: dir,
-      XDG_DATA_HOME: dir,
-    },
+    env: configEnv(dir),
     fetchImpl: async () => {
       calls++;
       return res(200, {
@@ -127,11 +137,7 @@ test("stale cache entries are re-scanned", async () => {
   process.env.JEV_GUARD_SCAN_CACHE = join(dir, "scan-cache.json");
   let calls = 0;
   const opts = {
-    env: {
-      JEV_BASE_URL: "https://kev.example",
-      XDG_CONFIG_HOME: dir,
-      XDG_DATA_HOME: dir,
-    },
+    env: configEnv(dir),
     fetchImpl: async () => {
       calls++;
       return res(200, {

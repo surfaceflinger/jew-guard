@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   decide,
   judgeInstructions,
@@ -254,9 +257,18 @@ test("v2 question tool is skipped by judge and scanner", async () => {
   );
 });
 
+const scanDir = mkdtempSync(join(tmpdir(), "jew-"));
+writeFileSync(
+  join(scanDir, "config.json"),
+  JSON.stringify({
+    endpoint: "custom",
+    url: "https://kev.example/v1/systemone",
+    key: "secret",
+    model: "test-model",
+  }),
+);
 const scanEnv = {
-  JEV_BASE_URL: "https://kev.example",
-  JEV_API_KEY: "secret",
+  JEV_GUARD_CONFIG_FILE: join(scanDir, "config.json"),
   XDG_CONFIG_HOME: "/nonexistent",
   XDG_DATA_HOME: "/nonexistent",
 };
@@ -371,12 +383,7 @@ test("assessAction asks when the backend omits fields", async () => {
       agent: "opencode",
     },
     {
-      env: {
-        JEV_BASE_URL: "https://kev.example",
-        JEV_API_KEY: "secret",
-        XDG_CONFIG_HOME: "/nonexistent",
-        XDG_DATA_HOME: "/nonexistent",
-      },
+      env: scanEnv,
       fetchImpl: async () => response,
     },
   );

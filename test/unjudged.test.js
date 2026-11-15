@@ -7,12 +7,8 @@ import { loadPlugin } from "./harness.js";
 import { setYolo } from "../src/yolo.js";
 
 const CLEAR = [
-  "JEV_BASE_URL",
-  "JEV_BASE_API_KEY",
   "OPENCODE_CONSOLE_TOKEN",
   "OPENCODE_API_KEY",
-  "JEV_API_KEY",
-  "OPENROUTER_API_KEY",
   "JEV_GUARD_YOLO",
   "JEV_GUARD_SOFT",
   "JEV_GUARD_FAIL_CLOSED",

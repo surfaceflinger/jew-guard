@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadPlugin } from "./harness.js";
@@ -52,7 +52,7 @@ test("commands are registered and report or toggle their state", async () => {
     await assert.rejects(run(plugin, "yolo", "on"), /jew-guard: yolo mode ON/);
     await assert.rejects(
       run(plugin, "jev-model"),
-      /jew-guard: model: jev-1.13-free \(from default\)/,
+      /jew-guard: no model configured/,
     );
   } finally {
     cleanup();
@@ -62,10 +62,16 @@ test("commands are registered and report or toggle their state", async () => {
 test("rpc handlers reuse the command logic", async () => {
   const cleanup = setup();
   try {
-    const plugin = await loadPlugin({ probeModel: async () => 0.9 });
+    const plugin = await loadPlugin({
+      probeModel: async () => 0.9,
+      decisionModels: async () => [
+        { id: "vendor/model", name: "Model", vendor: "vendor" },
+      ],
+    });
     assert.equal(plugin.rpc.definition.id, "jew-guard");
     assert.deepEqual(Object.keys(plugin.rpc.handlers).sort(), [
       "model",
+      "models",
       "soft",
       "workspace",
       "workspaces",
@@ -76,14 +82,34 @@ test("rpc handlers reuse the command logic", async () => {
     assert.match(yolo.message, /yolo mode ON/);
     const soft = await plugin.rpc.handlers.soft({ text: "on" });
     assert.match(soft.message, /soft mode ON/);
-    const model = await plugin.rpc.handlers.model({ text: "jev-1.13" });
-    assert.match(model.message, /switched to jev-1\.13/);
+    const model = await plugin.rpc.handlers.model({ text: "test-model" });
+    assert.match(model.message, /switched to test-model/);
     const workspaces = await plugin.rpc.handlers.workspaces({});
     assert.deepEqual(workspaces.items, []);
     assert.match(workspaces.message, /no Console credential/);
+    const models = await plugin.rpc.handlers.models({});
+    assert.deepEqual(models.items, [
+      { id: "vendor/model", name: "Model", vendor: "vendor" },
+    ]);
     const workspace = await plugin.rpc.handlers.workspace({ text: "missing" });
     assert.equal(workspace.variant, "error");
     assert.match(workspace.message, /no Console credential/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("workspace choices are skipped for non-Console endpoints", async () => {
+  const cleanup = setup();
+  try {
+    writeFileSync(
+      process.env.JEV_GUARD_CONFIG_FILE,
+      JSON.stringify({ endpoint: "openrouter" }),
+    );
+    const plugin = await loadPlugin();
+    const choices = await plugin.rpc.handlers.workspaces({});
+    assert.deepEqual(choices.items, []);
+    assert.match(choices.message, /does not use a Console workspace/);
   } finally {
     cleanup();
   }
@@ -343,11 +369,11 @@ test("/jev-model probes the candidate before saving it", async () => {
       },
     });
     await assert.rejects(
-      run(plugin, "jev-model", "jev-1.13"),
-      /switched to jev-1\.13 \(the guard endpoint answered, p=0\.90\)/,
+      run(plugin, "jev-model", "test-model"),
+      /switched to test-model \(the guard endpoint answered, p=0\.90\)/,
     );
-    assert.equal(probed, "jev-1.13");
-    assert.equal(readModel(), "jev-1.13");
+    assert.equal(probed, "test-model");
+    assert.equal(readModel(), "test-model");
   } finally {
     cleanup();
   }
@@ -356,17 +382,17 @@ test("/jev-model probes the candidate before saving it", async () => {
 test("/jev-model keeps the previous model when the probe fails", async () => {
   const cleanup = setup();
   try {
-    saveModel("jev-1.13-free");
+    saveModel("previous-model");
     const plugin = await loadPlugin({
       probeModel: async () => {
         throw new Error("offline");
       },
     });
     await assert.rejects(
-      run(plugin, "jev-model", "jev-1.13"),
+      run(plugin, "jev-model", "test-model"),
       /Previous model kept/,
     );
-    assert.equal(readModel(), "jev-1.13-free");
+    assert.equal(readModel(), "previous-model");
   } finally {
     cleanup();
   }
@@ -402,20 +428,12 @@ test("after-hook marks results when the scan fails", async () => {
   }
 });
 
-test("/jev-model does not claim a switch when JEV_MODEL overrides it", async () => {
+test("/jev-model says when no model is configured", async () => {
   const cleanup = setup();
-  const previous = process.env.JEV_MODEL;
-  process.env.JEV_MODEL = "env-model";
   try {
-    const plugin = await loadPlugin({ probeModel: async () => 0.9 });
-    await assert.rejects(
-      run(plugin, "jev-model", "jev-1.13"),
-      /JEV_MODEL is set/,
-    );
-    assert.equal(readModel(), null);
+    const plugin = await loadPlugin();
+    await assert.rejects(run(plugin, "jev-model"), /no model configured/);
   } finally {
-    if (previous === undefined) delete process.env.JEV_MODEL;
-    else process.env.JEV_MODEL = previous;
     cleanup();
   }
 });

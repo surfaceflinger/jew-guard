@@ -42,12 +42,36 @@ const choicesOutput = {
   additionalProperties: false,
 };
 
+const catalogOutput = {
+  type: "object",
+  properties: {
+    current: { type: "string" },
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          name: { type: "string" },
+          vendor: { type: "string" },
+        },
+        required: ["id", "name", "vendor"],
+        additionalProperties: false,
+      },
+    },
+    message: { type: "string" },
+  },
+  required: ["current", "items"],
+  additionalProperties: false,
+};
+
 export const JewGuardRpc = Rpc.define({
   id: "jew-guard",
   methods: {
     yolo: { input: textInput, output: messageOutput },
     soft: { input: textInput, output: messageOutput },
     model: { input: textInput, output: messageOutput },
+    models: { input: emptyInput, output: catalogOutput },
     workspace: { input: textInput, output: messageOutput },
     workspaces: { input: emptyInput, output: choicesOutput },
   },

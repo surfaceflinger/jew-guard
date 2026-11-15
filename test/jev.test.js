@@ -88,7 +88,7 @@ test("backend from config.json: literal key, workspace", async () => {
       url: "https://example.test/v1/systemone",
       key: "st_test",
       org: "wrk_1",
-      model: "jev-1.13",
+      model: "test-model",
     }),
   );
   assert.deepEqual(b, {
@@ -96,6 +96,42 @@ test("backend from config.json: literal key, workspace", async () => {
     key: "st_test",
     url: "https://example.test/v1/systemone",
     orgId: "wrk_1",
+  });
+});
+
+test("backend from config.json: console falls back to the injected token", async () => {
+  const b = await backend(
+    withConfig(
+      {
+        endpoint: "opencode",
+        url: "https://example.test/v1/systemone",
+        model: "test-model",
+      },
+      { OPENCODE_API_KEY: "api-key" },
+    ),
+  );
+  assert.deepEqual(b, {
+    kind: "console",
+    key: "api-key",
+    url: "https://example.test/v1/systemone",
+    orgId: null,
+  });
+});
+
+test("backend from config.json: custom endpoint", async () => {
+  const b = await backend(
+    withConfig({
+      endpoint: "custom",
+      url: "https://kev.example/v1/systemone",
+      key: "secret",
+      model: "test-model",
+    }),
+  );
+  assert.deepEqual(b, {
+    kind: "custom",
+    key: "secret",
+    url: "https://kev.example/v1/systemone",
+    orgId: null,
   });
 });
 
@@ -120,6 +156,7 @@ test(
           endpoint: "openrouter",
           url: OPENROUTER_URL,
           keyProvider: "openrouter",
+          model: "test-model",
         },
         { XDG_DATA_HOME: dir },
       ),
@@ -139,50 +176,21 @@ test("backend from config.json: missing credential throws with a pointer", async
       withConfig({
         endpoint: "opencode",
         url: "https://example.test",
-        keyEnv: "NOPE_TOKEN",
+        keyProvider: "nope",
       }),
     ),
-    /env NOPE_TOKEN is not set.*jew-guard auth/,
+    /no credential for provider "nope" in opencode\.db.*jew-guard auth/,
   );
 });
 
-test("ask calls OpenRouter decisions when the Jev backend errors", async () => {
+test("ask uses the configured backend", async () => {
   const calls = [];
-  const fetchImpl = async (url) => {
-    calls.push(String(url));
-    return calls.length === 1
-      ? res(402, { error: "insufficient funds" })
-      : res(200, ANSWERS);
-  };
-  const e = env({
-    JEV_BASE_URL: "https://kev.example",
-    OPENROUTER_API_KEY: "or-test",
+  const e = withConfig({
+    endpoint: "openrouter",
+    url: OPENROUTER_URL,
+    key: "or-config",
+    model: "test-model",
   });
-  const a = await ask({ tool: "bash" }, QUESTIONS, { env: e, fetchImpl });
-  assert.deepEqual(calls, ["https://kev.example/v1/systemone", OPENROUTER_URL]);
-  assert.equal(a.risk.score, 0.4);
-  assert.equal(a.approval.p, 0.2);
-});
-
-test("ask does not call OpenRouter when Jev answers", async () => {
-  const calls = [];
-  const fetchImpl = async (url) => {
-    calls.push(String(url));
-    return res(200, ANSWERS);
-  };
-  await ask({ tool: "bash" }, QUESTIONS, {
-    env: env({
-      JEV_BASE_URL: "https://kev.example",
-      OPENROUTER_API_KEY: "or-test",
-    }),
-    fetchImpl,
-  });
-  assert.equal(calls.length, 1);
-});
-
-test("ask uses OpenRouter directly when no Jev backend exists", async () => {
-  const calls = [];
-  const e = env({ OPENROUTER_API_KEY: "or-test" });
   const a = await ask({ tool: "bash" }, QUESTIONS, {
     env: e,
     fetchImpl: async (url) => {
@@ -192,62 +200,32 @@ test("ask uses OpenRouter directly when no Jev backend exists", async () => {
   });
   assert.deepEqual(calls, [OPENROUTER_URL]);
   assert.equal(a.risk.score, 0.4);
+  assert.equal(a.approval.p, 0.2);
 });
 
-test("ask uses the configured OpenRouter backend without re-falling back", async () => {
-  const calls = [];
+test("ask refuses to run without a configured model", async () => {
   const e = withConfig({
     endpoint: "openrouter",
     url: OPENROUTER_URL,
     key: "or-config",
-    model: "inception/mercury-decide:free",
   });
-  await ask({ tool: "bash" }, QUESTIONS, {
-    env: e,
-    fetchImpl: async (url) => {
-      calls.push(String(url));
-      return res(200, ANSWERS);
-    },
-  });
-  assert.deepEqual(calls, [OPENROUTER_URL]);
-});
-
-test("ask with fallback:false or FAIL_CLOSED never calls OpenRouter", async () => {
-  const calls = [];
-  const fetchImpl = async (url) => {
-    calls.push(String(url));
-    return res(402, { error: "insufficient funds" });
-  };
-  const base = {
-    JEV_BASE_URL: "https://kev.example",
-    OPENROUTER_API_KEY: "or-test",
-  };
   await assert.rejects(
     ask({ q: 1 }, QUESTIONS, {
-      env: env({ ...base, JEV_GUARD_FAIL_CLOSED: "1" }),
-      fetchImpl,
+      env: e,
+      fetchImpl: async () => res(200, ANSWERS),
     }),
-    /HTTP 402/,
+    /no model configured/,
   );
-  await assert.rejects(
-    ask({ q: 1 }, QUESTIONS, { env: env(base), fetchImpl, fallback: false }),
-    /HTTP 402/,
-  );
-  assert.deepEqual(calls, [
-    "https://kev.example/v1/systemone",
-    "https://kev.example/v1/systemone",
-  ]);
 });
 
-test("JEV_BASE_URL accepts the documented JEV_API_KEY", async () => {
-  const b = await backend(
-    env({ JEV_BASE_URL: "https://kev.example", JEV_API_KEY: "secret" }),
+test("ask refuses to run without credentials", async () => {
+  await assert.rejects(
+    ask({ q: 1 }, QUESTIONS, {
+      env: env(),
+      fetchImpl: async () => res(200, ANSWERS),
+    }),
+    /no credentials/,
   );
-  assert.deepEqual(b, {
-    kind: "custom",
-    key: "secret",
-    url: "https://kev.example/v1/systemone",
-  });
 });
 
 test("answer numbers are normalized and missing fields stay missing", async () => {
@@ -260,7 +238,12 @@ test("answer numbers are normalized and missing fields stay missing", async () =
     },
   };
   const a = await ask({ q: 1 }, QUESTIONS, {
-    env: env({ JEV_BASE_URL: "https://kev.example", JEV_API_KEY: "secret" }),
+    env: withConfig({
+      endpoint: "custom",
+      url: "https://kev.example/v1/systemone",
+      key: "secret",
+      model: "test-model",
+    }),
     fetchImpl: async () => res(200, body),
   });
   assert.equal(a.risk.score, 0.4);
@@ -289,30 +272,9 @@ test("ask model option overrides the configured model", async () => {
   assert.equal(body.model, "candidate");
 });
 
-test("JEV_MODEL env wins over the config.json model", async () => {
-  let body;
-  const e = withConfig(
-    {
-      endpoint: "opencode",
-      url: "https://example.test/v1/systemone",
-      key: "st_test",
-      model: "from-config",
-    },
-    { JEV_MODEL: "from-env" },
-  );
-  await ask({ q: 1 }, QUESTIONS, {
-    env: e,
-    fetchImpl: async (url, init) => {
-      body = JSON.parse(init.body);
-      return res(200, ANSWERS);
-    },
-  });
-  assert.equal(body.model, "from-env");
-});
-
 test("config.json with only workspace/model picks leaves auto-detection in charge", async () => {
   assert.equal(
-    await backend(withConfig({ model: "jev-1.13", org: "wrk_1" })),
+    await backend(withConfig({ model: "test-model", org: "wrk_1" })),
     null,
   );
 });

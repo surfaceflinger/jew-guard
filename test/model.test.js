@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  decisionModels,
   deleteModel,
   effectiveModel,
   readModel,
@@ -31,26 +32,21 @@ test("save writes config.json; read reads it back", () => {
   const iso = isolate();
   try {
     assert.equal(readModel(), null);
-    saveModel("jev-1.13");
-    assert.equal(readModel(), "jev-1.13");
-    assert.equal(JSON.parse(readFileSync(iso.path, "utf8")).model, "jev-1.13");
+    saveModel("test-model");
+    assert.equal(readModel(), "test-model");
+    assert.equal(
+      JSON.parse(readFileSync(iso.path, "utf8")).model,
+      "test-model",
+    );
   } finally {
     iso.restore();
   }
 });
 
-test("effective model: env > config > default", () => {
+test("effective model comes from config or is null", () => {
   const iso = isolate({ config: { model: "from-config" } });
   try {
-    assert.deepEqual(
-      effectiveModel({ ...iso.env, JEV_MODEL: "custom-x" }, "console"),
-      { model: "custom-x", source: "JEV_MODEL" },
-    );
-    assert.deepEqual(effectiveModel(iso.env, "console"), {
-      model: "from-config",
-      source: "config",
-    });
-    assert.deepEqual(effectiveModel(iso.env, "openrouter"), {
+    assert.deepEqual(effectiveModel(iso.env), {
       model: "from-config",
       source: "config",
     });
@@ -59,21 +55,33 @@ test("effective model: env > config > default", () => {
   }
   const empty = isolate();
   try {
-    assert.deepEqual(effectiveModel(empty.env, "console"), {
-      model: "jev-1.13-free",
-      source: "default",
-    });
-    assert.deepEqual(effectiveModel(empty.env, "openrouter"), {
-      model: "inception/mercury-decide:free",
-      source: "default",
-    });
-    assert.deepEqual(effectiveModel(empty.env, "typesafe"), {
-      model: "jev-latest",
-      source: "default",
-    });
+    assert.equal(effectiveModel(empty.env), null);
   } finally {
     empty.restore();
   }
+});
+
+test("decisionModels maps and sorts the live catalog", async () => {
+  const models = await decisionModels({
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        data: [
+          { id: "~typesafe/model-latest", name: "Model Latest" },
+          { id: "perplexity/decider", name: "Decider" },
+          { id: "typesafe/model-1.4", name: "Model 1.4" },
+        ],
+      }),
+    }),
+  });
+  assert.deepEqual(
+    models.map(({ id, vendor }) => [vendor, id]),
+    [
+      ["perplexity", "perplexity/decider"],
+      ["typesafe", "typesafe/model-1.4"],
+      ["typesafe", "~typesafe/model-latest"],
+    ],
+  );
 });
 
 test("clearing the last setting removes config.json", () => {
@@ -88,7 +96,7 @@ test("clearing the last setting removes config.json", () => {
 
 test("deleteModel removes the pick and keeps the rest of config.json", () => {
   const iso = isolate({
-    config: { endpoint: "openrouter", model: "inception/mercury-decide:free" },
+    config: { endpoint: "openrouter", model: "test-model" },
   });
   try {
     deleteModel();

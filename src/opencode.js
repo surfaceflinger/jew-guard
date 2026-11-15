@@ -18,7 +18,8 @@ import {
   saveSelection,
   validateWorkspace,
 } from "./workspace.js";
-import { effectiveModel, saveModel } from "./model.js";
+import { readConfig } from "./config.js";
+import { decisionModels, effectiveModel, saveModel } from "./model.js";
 import {
   isSoft,
   isYolo,
@@ -63,7 +64,7 @@ async function probeModel(model) {
         criteria: { true: "Yes.", false: "No." },
       },
     },
-    { fallback: false, ...(model ? { model } : {}) },
+    { ...(model ? { model } : {}) },
   );
   return answer.ok?.p ?? 0;
 }
@@ -98,6 +99,7 @@ export function createJewGuard(deps = {}) {
   const probe = deps.probeModel ?? probeModel;
   const scanCached = deps.scanInstructionsCached ?? scanInstructionsCached;
   const scanOutput = deps.scanContent ?? scanContent;
+  const catalog = deps.decisionModels ?? decisionModels;
   const judgedCalls = new Map();
   const actionForTool = (tool) => (EDIT_TOOLS.has(tool) ? "edit" : tool);
   const callKey = (messageID, id, action) =>
@@ -220,14 +222,10 @@ export function createJewGuard(deps = {}) {
         const current = effectiveModel(process.env);
         if (!arg)
           return {
-            message: `model: ${current.model} (from ${current.source}). Re-run as /jev-model <id> to switch.`,
+            message: current
+              ? `model: ${current.model} (from ${current.source}). Re-run as /jev-model <id> to switch.`
+              : "no model configured. Run /jev-model to pick one.",
             variant: "info",
-          };
-        if (process.env.JEV_MODEL)
-          return {
-            message:
-              "JEV_MODEL is set and wins over a saved model; unset it to switch.",
-            variant: "warning",
           };
         let probability;
         try {
@@ -245,6 +243,14 @@ export function createJewGuard(deps = {}) {
         };
       };
       const workspaceChoices = async () => {
+        const endpoint = readConfig(process.env)?.endpoint;
+        if (endpoint && endpoint !== "opencode")
+          return {
+            current: "",
+            items: [],
+            message:
+              "the configured endpoint does not use a Console workspace.",
+          };
         const status = await workspaceStatus(process.env);
         if (!status.hasToken)
           return {
@@ -262,6 +268,18 @@ export function createJewGuard(deps = {}) {
           current: status.selected?.id ?? "",
           items: status.spaces.map(({ id, name }) => ({ id, name })),
         };
+      };
+      const modelChoices = async () => {
+        const current = effectiveModel(process.env)?.model ?? "";
+        try {
+          return { current, items: await catalog() };
+        } catch (error) {
+          return {
+            current,
+            items: [],
+            message: `model catalog failed: ${error.message}`,
+          };
+        }
       };
 
       let contextCache = null;
@@ -316,6 +334,7 @@ export function createJewGuard(deps = {}) {
         yolo: async ({ text }) => toggleMode(YOLO_COMMAND, text),
         soft: async ({ text }) => toggleMode(SOFT_COMMAND, text),
         model: async ({ text }) => pickModel(text),
+        models: async () => modelChoices(),
         workspace: async ({ text }) => pickWorkspace(text),
         workspaces: async () => workspaceChoices(),
       });
@@ -519,6 +538,11 @@ export function createJewGuard(deps = {}) {
           async execute(args) {
             const action = args.action ?? "status";
             const current = effectiveModel(process.env);
+            if (!current) {
+              return {
+                content: "No guard model configured. Pick one with /jev-model.",
+              };
+            }
             if (action === "test") {
               const probability = await probe();
               return {
@@ -526,11 +550,7 @@ export function createJewGuard(deps = {}) {
               };
             }
             return {
-              content:
-                `Current guard model: ${current.model} (from ${current.source}).` +
-                (process.env.JEV_MODEL
-                  ? " JEV_MODEL is set and wins over any saved pick."
-                  : ""),
+              content: `Current guard model: ${current.model} (from ${current.source}).`,
             };
           },
         });

@@ -20,7 +20,7 @@ export async function scanInstructionsCached({ text, source }, options = {}) {
   if (!shouldScan(text)) return null;
   const env = options.env ?? process.env;
   const limits = thresholds(env);
-  const model = effectiveModel(env).model;
+  const model = effectiveModel(env)?.model ?? "";
   const cacheKey = createHash("sha1").update(`${model}\0${text}`).digest("hex");
   const cached = readCache()[cacheKey];
   if (

@@ -26,6 +26,7 @@ const pickWorkspace = (context, guard) =>
     const { current, items, message } = await guard.workspaces({});
     if (!items?.length)
       return { message: message ?? "no workspaces found", variant: "warning" };
+    if (items.length === 1) return guard.workspace({ text: items[0].id });
     const picked = await context.ui.dialog.select({
       title: "jew-guard: billing workspace",
       current: current || undefined,
@@ -36,6 +37,24 @@ const pickWorkspace = (context, guard) =>
       })),
     });
     return picked ? guard.workspace({ text: picked }) : null;
+  });
+
+const pickModel = (context, guard) =>
+  attempt(context, async () => {
+    const { current, items, message } = await guard.models({});
+    if (!items?.length)
+      return { message: message ?? "no models found", variant: "warning" };
+    const picked = await context.ui.dialog.select({
+      title: "jew-guard: decision model",
+      current: current || undefined,
+      options: items.map((model) => ({
+        title: model.name,
+        value: model.id,
+        description: model.id,
+        category: model.vendor,
+      })),
+    });
+    return picked ? guard.model({ text: picked }) : null;
   });
 
 export default Plugin.define({
@@ -62,7 +81,10 @@ export default Plugin.define({
           id: "jew-guard.model",
           title: "Show or switch the jew-guard model",
           slash: { name: "jev-model", arguments: true },
-          run: run("model"),
+          run: (input) =>
+            input
+              ? attempt(context, () => guard.model({ text: input }))
+              : pickModel(context, guard),
         },
         {
           id: "jew-guard.workspace",

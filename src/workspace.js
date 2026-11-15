@@ -59,8 +59,6 @@ export async function resolveWorkspace(env = process.env, options = {}) {
     options.spaces ??
     (await listWorkspaces({ env, fetchImpl: options.fetchImpl ?? fetch }));
   if (!spaces.length) return null;
-  const want = env.JEV_GUARD_WORKSPACE;
-  if (want) return matchWorkspace(spaces, want);
   const saved = readSelection();
   if (saved) {
     const match = spaces.find((workspace) => workspace.id === saved.id);

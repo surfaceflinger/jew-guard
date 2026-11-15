@@ -1,29 +1,17 @@
 import { readConfig } from "./config.js";
 import { resolveWorkspace } from "./workspace.js";
 import { effectiveModel } from "./model.js";
-import { authKey, serviceKey } from "./auth.js";
+import { authKey, consoleToken, serviceKey } from "./auth.js";
 
 export const CONSOLE_URL = "https://opencode.ai/inference/v1/systemone";
-export const TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone";
 export const OPENROUTER_URL = "https://openrouter.ai/api/alpha/decisions";
-const OPENROUTER_MODEL = "inception/mercury-decide:free";
-const SYSTEMONE_PATH = "/v1/systemone";
 
 const LOOPBACK = new Set(["localhost", "[::1]"]);
 
 export async function backend(env = process.env) {
   const stored = readConfig(env);
-  if (
-    stored &&
-    (stored.endpoint || stored.key || stored.keyEnv || stored.keyProvider)
-  )
+  if (stored && (stored.endpoint || stored.key || stored.keyProvider))
     return backendFromConfig(stored, env);
-  if (env.JEV_BASE_URL)
-    return {
-      kind: "custom",
-      key: env.JEV_BASE_API_KEY ?? env.JEV_API_KEY,
-      url: systemOneUrl(env.JEV_BASE_URL),
-    };
   const consoleKey = env.OPENCODE_CONSOLE_TOKEN || env.OPENCODE_API_KEY;
   if (consoleKey) {
     let workspace = null,
@@ -43,10 +31,8 @@ export async function backend(env = process.env) {
     if (workspaceError) throw workspaceError;
     return { kind: "console-unresolved", key: consoleKey };
   }
-  if (env.JEV_API_KEY) return { kind: "typesafe", key: env.JEV_API_KEY };
-  const serviceAccount = serviceKey(env);
-  if (serviceAccount)
-    return { kind: "console", key: serviceAccount, orgId: null };
+  const service = serviceKey(env);
+  if (service) return { kind: "console", key: service, orgId: null };
   return null;
 }
 
@@ -65,14 +51,12 @@ function backendFromConfig(config, env) {
       `jew-guard config: endpoint "${config.endpoint}" needs a url; run jew-guard auth`,
     );
   checkUrl(url, "jew-guard config url");
-  const key = config.keyEnv
-    ? env[config.keyEnv]
-    : config.keyProvider
-      ? authKey(config.keyProvider, env)
-      : config.key;
+  const key = config.keyProvider
+    ? authKey(config.keyProvider, env)
+    : (config.key ?? (kind === "console" ? consoleToken(env) : undefined));
   if (!key)
     throw new Error(
-      `jew-guard config: ${config.keyEnv ? `env ${config.keyEnv} is not set` : `no credential for provider "${config.keyProvider}" in opencode.db`}; run jew-guard auth`,
+      `jew-guard config: no credential${config.keyProvider ? ` for provider "${config.keyProvider}" in opencode.db` : ""}; run jew-guard auth`,
     );
   return { kind, key, url, orgId: config.org ?? null };
 }
@@ -91,14 +75,6 @@ function checkUrl(url, label) {
     throw new Error(
       `${label} must be https, or http on localhost or a private address: ${url}`,
     );
-}
-
-export function systemOneUrl(base) {
-  checkUrl(base, "JEV_BASE_URL");
-  const parsedUrl = new URL(base);
-  parsedUrl.search = "";
-  parsedUrl.hash = "";
-  return parsedUrl.href.replace(/\/+$/, "") + SYSTEMONE_PATH;
 }
 
 function isLocal(host) {
@@ -120,51 +96,22 @@ function isLocal(host) {
 export async function ask(state, questions, options = {}) {
   const { env = process.env } = options;
   const resolved = await backend(env);
-  const target =
-    resolved && options.model
-      ? { ...resolved, model: options.model }
-      : resolved;
-  const fallback =
-    options.fallback === false ||
-    env.JEV_GUARD_FAIL_CLOSED ||
-    resolved?.kind === "openrouter"
-      ? null
-      : openRouterKey(env);
   if (!resolved || resolved.kind === "console-unresolved") {
-    if (fallback)
-      return request(openRouterBackend(fallback), state, questions, options);
     if (!resolved)
       throw new Error(
-        "no credentials: run /connect in opencode (Console workspace), or set JEV_API_KEY / JEV_BASE_URL",
+        "no credentials: run /connect in opencode, or configure a key with jew-guard auth",
       );
     throw new Error(
       "console workspaces unresolved: run /jev-workspace and pick your workspace",
     );
   }
-  try {
-    return await request(target, state, questions, options);
-  } catch (err) {
-    if (!fallback) throw err;
-    return request(openRouterBackend(fallback), state, questions, {
-      ...options,
-      timeoutMs: Math.min(
-        options.timeoutMs ?? +(env.JEV_GUARD_TIMEOUT_MS || 6000),
-        6000,
-      ),
-    });
-  }
+  return request(
+    options.model ? { ...resolved, model: options.model } : resolved,
+    state,
+    questions,
+    options,
+  );
 }
-
-export function openRouterKey(env = process.env) {
-  return env.OPENROUTER_API_KEY || authKey("openrouter", env);
-}
-
-const openRouterBackend = (key) => ({
-  kind: "openrouter",
-  key,
-  url: OPENROUTER_URL,
-  model: OPENROUTER_MODEL,
-});
 
 async function request(
   target,
@@ -176,9 +123,12 @@ async function request(
     timeoutMs ?? +(env.JEV_GUARD_TIMEOUT_MS || 20_000),
   );
   const abort = signal ? AbortSignal.any([signal, budget]) : budget;
-  const model = target.model ?? effectiveModel(env, target.kind).model;
-  const url =
-    target.url ?? { console: CONSOLE_URL, typesafe: TYPESAFE_URL }[target.kind];
+  const model = target.model ?? effectiveModel(env)?.model;
+  if (!model)
+    throw new Error(
+      "no model configured: run /jev-model or jew-guard model set <id>",
+    );
+  const url = target.url ?? CONSOLE_URL;
   const headers = { "Content-Type": "application/json" };
   if (target.key) headers.Authorization = `Bearer ${target.key}`;
   if (target.orgId) headers["x-opencode-org-id"] = target.orgId;
