@@ -178,7 +178,18 @@ export function createJewGuard(deps = {}) {
           variant: "success",
         };
       };
+      const usesConsoleWorkspace = (env = process.env) => {
+        const endpoint = readConfig(env)?.endpoint;
+        return !endpoint || endpoint === "opencode";
+      };
+
       const pickWorkspace = async (arg) => {
+        if (!usesConsoleWorkspace())
+          return {
+            message:
+              "the configured endpoint does not use a Console workspace.",
+            variant: "info",
+          };
         const status = await workspaceStatus(process.env);
         if (!status.hasToken)
           return {
@@ -243,8 +254,7 @@ export function createJewGuard(deps = {}) {
         };
       };
       const workspaceChoices = async () => {
-        const endpoint = readConfig(process.env)?.endpoint;
-        if (endpoint && endpoint !== "opencode")
+        if (!usesConsoleWorkspace())
           return {
             current: "",
             items: [],
@@ -490,6 +500,11 @@ export function createJewGuard(deps = {}) {
             additionalProperties: false,
           },
           async execute(args) {
+            if (!usesConsoleWorkspace())
+              return {
+                content:
+                  "The configured endpoint does not use a Console workspace.",
+              };
             const action = args.action ?? "status";
             if (action === "test") {
               const probability = await probe();

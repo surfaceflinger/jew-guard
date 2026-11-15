@@ -110,6 +110,14 @@ test("workspace choices are skipped for non-Console endpoints", async () => {
     const choices = await plugin.rpc.handlers.workspaces({});
     assert.deepEqual(choices.items, []);
     assert.match(choices.message, /does not use a Console workspace/);
+    const status = await plugin.tools.jew_workspace.execute({
+      action: "status",
+    });
+    assert.match(status.content, /does not use a Console workspace/);
+    await assert.rejects(
+      run(plugin, "jew-workspace"),
+      /does not use a Console workspace/,
+    );
   } finally {
     cleanup();
   }
